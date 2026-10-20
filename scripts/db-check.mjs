@@ -1,0 +1,118 @@
+// Valida a migração num Postgres em memória (PGlite) e testa regras críticas.
+// Uso: npm run db:check
+import { PGlite } from '@electric-sql/pglite';
+import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const db = new PGlite({ extensions: { btree_gist } });
+// Imitação mínima do que o Supabase já fornece (schema auth e papéis).
+await db.exec(`
+create schema auth;
+create table auth.users(id uuid primary key, phone text);
+create role authenticated; create role anon;
+create function auth.uid() returns uuid language sql stable as
+  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+create function auth.jwt() returns jsonb language sql stable as
+  $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
+`);
+const dir = 'supabase/migrations';
+for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+  await db.exec(fs.readFileSync(path.join(dir, f), 'utf8'));
+  console.log('ok', f);
+}
+
+let fail = 0;
+const check = async (name, fn) => {
+  try { await fn(); console.log('✓', name); } catch (e) { fail++; console.error('✗', name, '-', e.message); }
+};
+const expectError = async (sql, params) => {
+  try { await db.query(sql, params); } catch { return; }
+  throw new Error('deveria ter falhado');
+};
+
+const owner = '00000000-0000-0000-0000-000000000001';
+await db.exec(`
+insert into auth.users values ('${owner}', '+5511900000001');
+insert into shops (id, name, slug) values ('10000000-0000-0000-0000-000000000001', 'Dom Bigode', 'dom-bigode'),
+                                          ('10000000-0000-0000-0000-000000000002', 'Outra', 'outra');
+insert into shop_members (shop_id, user_id, role) values ('10000000-0000-0000-0000-000000000001', '${owner}', 'owner');
+insert into barbers (id, shop_id, display_name) values ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Rafa');
+insert into services (id, shop_id, name, duration_min, price) values ('30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '{"pt":"Corte"}', 40, 50);
+insert into clients (id, shop_id, phone_e164, name) values ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '+5511988887777', 'Marcos'),
+                                                         ('40000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', '+5511977776666', 'Outro');
+insert into appointments (shop_id, barber_id, client_id, service_id, starts_at, ends_at)
+  values ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001',
+          '30000000-0000-0000-0000-000000000001', '2026-10-21 10:00-03', '2026-10-21 10:40-03');
+`);
+const appt = (start, end, status = 'confirmed') => [
+  `insert into appointments (shop_id, barber_id, service_id, starts_at, ends_at, status)
+   values ('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', $1, $2, $3)`,
+  [start, end, status],
+];
+
+await check('bloqueia dois horários sobrepostos do mesmo barbeiro', () => expectError(...appt('2026-10-21 10:20-03', '2026-10-21 11:00-03')));
+await check('aceita horário logo em seguida', () => db.query(...appt('2026-10-21 10:40-03', '2026-10-21 11:20-03')));
+await check('horário cancelado não ocupa a agenda', async () => {
+  await db.query(...appt('2026-10-21 12:00-03', '2026-10-21 12:40-03', 'cancelled'));
+  await db.query(...appt('2026-10-21 12:00-03', '2026-10-21 12:40-03'));
+});
+await check('telefone repetido na mesma barbearia é recusado',
+  () => expectError(`insert into clients (shop_id, phone_e164, name) values ('10000000-0000-0000-0000-000000000001', '+5511988887777', 'X')`));
+
+// RLS: entrar como usuário logado.
+await db.exec(`grant usage on schema public, auth to authenticated; grant all on all tables in schema public to authenticated;`);
+const as = async (claims, fn) => {
+  await db.exec(`begin; set local role authenticated;
+    select set_config('request.jwt.claim.sub', '${claims.sub ?? ''}', true),
+           set_config('request.jwt.claims', '${JSON.stringify(claims)}', true);`);
+  try { return await fn(); } finally { await db.exec('rollback'); }
+};
+await check('dono vê só os clientes da própria barbearia', () => as({ sub: owner }, async () => {
+  const r = await db.query('select name from clients order by name');
+  if (r.rows.map((x) => x.name).join() !== 'Marcos') throw new Error(JSON.stringify(r.rows));
+}));
+await check('cliente vê só os próprios agendamentos (pelo WhatsApp)', () =>
+  as({ sub: '00000000-0000-0000-0000-000000000099', phone: '5511988887777' }, async () => {
+    const r = await db.query('select count(*)::int n from appointments');
+    if (r.rows[0].n !== 1) throw new Error('viu ' + r.rows[0].n);
+  }));
+await check('estranho não vê clientes', () => as({ sub: '00000000-0000-0000-0000-000000000098', phone: '5500000000000' }, async () => {
+  const r = await db.query('select count(*)::int n from clients');
+  if (r.rows[0].n !== 0) throw new Error('viu ' + r.rows[0].n);
+}));
+await check('catálogo de serviços é público', () => as({}, async () => {
+  const r = await db.query('select count(*)::int n from services');
+  if (r.rows[0].n !== 1) throw new Error('viu ' + r.rows[0].n);
+}));
+
+const marcos = { sub: '00000000-0000-0000-0000-000000000099', phone: '5511988887777' };
+const novo = { sub: '00000000-0000-0000-0000-000000000097', phone: '+5511955554444' };
+const book = (start) => db.query(`select book_appointment('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
+  '30000000-0000-0000-0000-000000000001', $1, 'Pedro') id`, [start]);
+await check('cliente novo agenda e ganha cadastro pelo WhatsApp', () => as(novo, async () => {
+  await book('2030-01-10 09:00-03');
+  const r = await db.query(`select name from clients`);
+  if (r.rows.length !== 1 || r.rows[0].name !== 'Pedro') throw new Error(JSON.stringify(r.rows));
+}));
+await check('agendar horário ocupado devolve slot_taken', () => as(novo, async () => {
+  await book('2030-01-10 09:00-03');
+  try { await book('2030-01-10 09:20-03'); } catch (e) { if (/slot_taken/.test(e.message)) return; throw e; }
+  throw new Error('deveria ter falhado');
+}));
+await check('agendar sem login é recusado', () => as({}, async () => {
+  try { await book('2030-01-10 09:00-03'); } catch (e) { if (/not_logged_in/.test(e.message)) return; throw e; }
+  throw new Error('deveria ter falhado');
+}));
+await check('grade pública mostra ocupado sem nomes', () => as({}, async () => {
+  const r = await db.query(`select * from busy_slots('10000000-0000-0000-0000-000000000001', '2026-10-21 00:00-03', '2026-10-22 00:00-03')`);
+  if (r.rows.length !== 3 || 'client_id' in r.rows[0]) throw new Error(JSON.stringify(r.rows));
+}));
+await check('cliente cancela o próprio horário, não o de outro', () => as(marcos, async () => {
+  const mine = await db.query(`select book_appointment('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
+    '30000000-0000-0000-0000-000000000001', '2030-02-01 10:00-03') id`);
+  await db.query('select cancel_my_appointment($1)', [mine.rows[0].id]);
+}));
+
+if (fail) { console.error(`${fail} verificação(ões) falharam`); process.exit(1); }
+console.log('banco ok');
