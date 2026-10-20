@@ -20,3 +20,15 @@ export async function supabaseServer() {
     },
   });
 }
+
+/** Usuário logado (ou null). Sempre null no modo demonstração. */
+export async function currentUser() {
+  if (!supabaseConfigured()) return null;
+  const db = await supabaseServer();
+  const { data } = await db.auth.getUser();
+  return data.user;
+}
+
+/** Só aceita caminhos internos no ?next= (evita redirecionar para outro site). */
+export const safeNext = (next: string | undefined, fallback = "/") =>
+  next && next.startsWith("/") && !next.startsWith("//") ? next : fallback;

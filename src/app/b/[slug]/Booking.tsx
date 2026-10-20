@@ -12,8 +12,8 @@ import { confirmBooking, loadSlots } from "./actions";
 
 type Pick = { minutes: number; barberId: string } | null;
 
-export default function Booking({ bundle, lang, today, initial, demo }: {
-  bundle: ShopBundle; lang: Lang; today: string; initial: DaySlots; demo: boolean;
+export default function Booking({ bundle, lang, today, initial, demo, loggedIn }: {
+  bundle: ShopBundle; lang: Lang; today: string; initial: DaySlots; demo: boolean; loggedIn: boolean;
 }) {
   const { shop, barbers, services } = bundle;
   const L = t(lang);
@@ -171,7 +171,9 @@ export default function Booking({ bundle, lang, today, initial, demo }: {
             {demo && <input className="input" placeholder={L.whatsapp} inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />}
           </div>
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          <button className="btn mt-3 w-full" disabled={pending || !name.trim()} onClick={confirm}>{L.confirm}</button>
+          {loggedIn
+            ? <button className="btn mt-3 w-full" disabled={pending || !name.trim()} onClick={confirm}>{L.confirm}</button>
+            : <a className="btn mt-3 block w-full text-center" href={`/entrar?next=${encodeURIComponent(`/b/${shop.slug}?lang=${lang}`)}`}>{L.loginNeeded}</a>}
         </div>
       )}
     </Shell>

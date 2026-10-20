@@ -114,5 +114,17 @@ await check('cliente cancela o próprio horário, não o de outro', () => as(mar
   await db.query('select cancel_my_appointment($1)', [mine.rows[0].id]);
 }));
 
+const novoDono = { sub: '00000000-0000-0000-0000-000000000050', phone: '5511911112222' };
+await db.exec(`insert into auth.users values ('00000000-0000-0000-0000-000000000050', '+5511911112222')`);
+await check('dono novo cadastra a barbearia e vira dono dela', () => as(novoDono, async () => {
+  await db.query(`select create_shop('Barbearia do Zé', 'Barbearia do Ze!')`);
+  const r = await db.query(`select s.slug, m.role from shops s join shop_members m on m.shop_id = s.id`);
+  if (r.rows.length !== 1 || r.rows[0].slug !== 'barbearia-do-ze' || r.rows[0].role !== 'owner') throw new Error(JSON.stringify(r.rows));
+}));
+await check('endereço já usado é recusado', () => as(novoDono, async () => {
+  try { await db.query(`select create_shop('Outra', 'dom-bigode')`); } catch (e) { if (/slug_taken/.test(e.message)) return; throw e; }
+  throw new Error('deveria ter falhado');
+}));
+
 if (fail) { console.error(`${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('banco ok');

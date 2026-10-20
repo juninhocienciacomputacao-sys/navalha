@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { repo } from "@/data";
+import { currentUser } from "@/lib/supabase";
 import { daySlots } from "@/data/booking";
 import { dayInZone } from "@/core/time";
 import { asLang } from "@/i18n";
@@ -17,5 +18,5 @@ export default async function Page({ params, searchParams }: {
   const today = dayInZone(new Date(), bundle.shop.timezone);
   const first = bundle.services[0];
   const initial = await daySlots(r, bundle, today, first.id);
-  return <Booking bundle={bundle} lang={lang} today={today} initial={initial} demo={r.mode === "demo"} />;
+  return <Booking bundle={bundle} lang={lang} today={today} initial={initial} demo={r.mode === "demo"} loggedIn={r.mode === "demo" || Boolean(await currentUser())} />;
 }

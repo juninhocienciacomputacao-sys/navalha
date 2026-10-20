@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { currentUser, supabaseServer } from "@/lib/supabase";
 import Link from "next/link";
 import { repo } from "@/data";
 import { atMinutes, dayInZone, minutesInZone, weekday } from "@/core/time";
@@ -16,6 +17,16 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
   const b = await r.shopBySlug(slug);
   if (!b) notFound();
   const { shop, barbers } = b;
+  if (r.mode === "supabase") {
+    const user = await currentUser();
+    if (!user) redirect(`/entrar?next=/painel/${slug}`);
+    const db = await supabaseServer();
+    const { data: member } = await db.from("shop_members").select("role").eq("shop_id", shop.id).eq("user_id", user.id).maybeSingle();
+    if (!member) {
+      return <main className="mx-auto max-w-md px-6 py-20 text-center"><h1 className="text-xl font-semibold">Sem acesso</h1>
+        <p className="mt-2 text-sm text-neutral-500">Sua conta não faz parte da equipe de {shop.name}. Peça ao dono para te adicionar.</p></main>;
+    }
+  }
   const tz = shop.timezone;
   const now = new Date();
   const today = dayInZone(now, tz);
@@ -124,9 +135,6 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
         </div>
         <p className="mt-3 text-xs text-neutral-500">Faturamento avulso. Atendimentos de plano entram no cálculo de comissão pela regra escolhida pelo dono.</p>
       </section>
-      {r.mode === "supabase" && agenda.length === 0 && dash.clients === 0 && (
-        <p className="mt-4 text-sm text-neutral-500">Nada aparecendo? Entre com uma conta da equipe desta barbearia.</p>
-      )}
     </main>
   );
 }

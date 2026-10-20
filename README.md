@@ -18,6 +18,8 @@ Sem configurar nada, o app abre com a barbearia de demonstração **Dom Bigode**
 - `/b/dom-bigode` é o app do cliente para agendar.
 - `/painel/dom-bigode` é o painel do dono, com faturamento, planos vencendo, agenda do dia e desempenho por barbeiro.
 
+Com o Supabase ligado, `/entrar` faz o login pelo WhatsApp (código), `/nova-barbearia` cadastra a barbearia do dono e o painel só abre para a equipe. Passo a passo em [docs/colocar-no-ar.md](docs/colocar-no-ar.md).
+
 Para usar o banco de verdade, crie um projeto no [Supabase](https://supabase.com), aplique `supabase/migrations` (e `supabase/seed.sql`, se quiser dados de exemplo) e copie `.env.example` para `.env.local` com a URL e a chave pública do projeto.
 
 ## Como está organizado
@@ -51,9 +53,8 @@ Também dá para configurar: aluguel de cadeira, exceções por serviço, produt
 
 ## Próximos passos
 
-1. Login pelo WhatsApp (código) e tela de entrada da equipe.
-2. Telas de gestão: clientes, planos, comissões, despesas e mensagens automáticas (criar, editar, excluir).
-3. Painel de TV da recepção e fila de encaixe.
-4. Lembretes pela API oficial do WhatsApp Business (1 dia e 2 horas antes). Precisa da conta Meta Business.
-5. Pagamento online (Pix e cartão) com reativação automática do plano e Pix dividido com o barbeiro.
-6. App instalável, com "compartilhar foto do Instagram" direto para o Navalha.
+1. Telas de gestão: clientes, planos, comissões, despesas e mensagens automáticas (criar, editar, excluir).
+2. Painel de TV da recepção e fila de encaixe.
+3. Lembretes pela API oficial do WhatsApp Business (1 dia e 2 horas antes). Precisa da conta Meta Business.
+4. Pagamento online (Pix e cartão) com reativação automática do plano e Pix dividido com o barbeiro.
+5. App instalável, com "compartilhar foto do Instagram" direto para o Navalha.
