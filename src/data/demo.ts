@@ -44,14 +44,62 @@ function rng(seed: number) {
   };
 }
 
-interface Row extends AgendaItem { clientPhone: string }
-const rows: Row[] = [];
+export interface DemoClient {
+  id: string; name: string; phone: string; lang: "pt" | "en" | "es"; createdAt: Date;
+  preferredBarberId: string | null; notes: string; photoConsentAt: Date | null; noShows: number;
+}
+export interface DemoAppointment extends AgendaItem { clientId: string | null; serviceId: string; subscriptionId: string | null }
+export interface DemoSubscription {
+  id: string; clientId: string; planId: string; periodStart: Date; periodEnd: Date; usesInPeriod: number;
+  soldByBarberId: string | null; cancelledAt: Date | null;
+}
+export interface DemoPayment {
+  id: string; clientId: string | null; subscriptionId: string | null; appointmentId: string | null;
+  amount: number; method: "pix" | "card" | "cash"; status: "pending" | "paid" | "failed" | "refunded"; paidAt: Date | null;
+}
+
+/**
+ * Banco de demonstração em memória, compartilhado por todas as telas.
+ * Some quando o servidor reinicia. Cada módulo pode guardar coleções próprias em arquivo próprio.
+ */
+export const store = {
+  bundle,
+  clients: [] as DemoClient[],
+  appointments: [] as DemoAppointment[],
+  subscriptions: [] as DemoSubscription[],
+  payments: [] as DemoPayment[],
+};
+const rows = store.appointments;
 let nextId = 1;
+export const demoId = (prefix: string) => `${prefix}-${nextId++}`;
+/** Garante que os dados de exemplo existem. Chame antes de ler o `store`. */
+export function demoSeed() { seed(); return store; }
 
 function seed() {
   if (rows.length) return;
   const today = dayInZone(new Date(), TZ);
   const r = rng(42);
+  NAMES.forEach((_, i) => SURNAMES.forEach((sn, j) => {
+    const n = j * NAMES.length + i;
+    store.clients.push({
+      id: `c-${n}`, name: `${NAMES[i]} ${sn}`, phone: `+55119${String(80000000 + n).padStart(8, "0")}`, lang: "pt",
+      createdAt: new Date(Date.now() - (30 + n * 3) * 86_400_000), preferredBarberId: bundle.barbers[n % 4].id,
+      notes: "", photoConsentAt: n % 3 === 0 ? new Date() : null, noShows: 0,
+    });
+  }));
+  const planIds = bundle.plans.map((p) => p.id);
+  for (let n = 0; n < 34; n++) {
+    const endIn = n === 0 ? 2 : n === 1 ? -3 : n === 2 ? 4 : n === 3 ? -9 : Math.floor(r() * 28) + 1;
+    const end = new Date(Date.now() + endIn * 86_400_000);
+    store.subscriptions.push({
+      id: `sub-${n}`, clientId: `c-${n}`, planId: planIds[n % planIds.length],
+      periodStart: new Date(end.getTime() - 30 * 86_400_000), periodEnd: end, usesInPeriod: Math.floor(r() * 4),
+      soldByBarberId: bundle.barbers[n % 4].id, cancelledAt: null,
+    });
+    store.payments.push({ id: `pay-${n}`, clientId: `c-${n}`, subscriptionId: `sub-${n}`, appointmentId: null,
+      amount: bundle.plans.find((p) => p.id === planIds[n % planIds.length])!.price, method: n % 3 ? "pix" : "card",
+      status: "paid", paidAt: new Date(end.getTime() - 30 * 86_400_000) });
+  }
   for (let d = -35; d <= 6; d++) {
     const day = addDays(today, d);
     const wd = String(new Date(day + "T12:00:00Z").getUTCDay());
@@ -65,11 +113,14 @@ function seed() {
         const fill = d < 0 ? 0.75 : d === 0 ? 0.6 : 0.45 - d * 0.05;
         const svc = bundle.services[Math.floor(r() * 4)];
         if (r() < fill && t + svc.durationMin <= ch * 60) {
-          const viaPlan = svc.planIds.length > 0 && r() < 0.35;
-          const n = Math.floor(r() * NAMES.length * SURNAMES.length);
+          const n = Math.floor(r() * store.clients.length);
+          const client = store.clients[n];
+          const sub = store.subscriptions.find((x) => x.clientId === client.id && svc.planIds.includes(x.planId));
+          const viaPlan = Boolean(sub) && r() < 0.8;
           const startsAt = atMinutes(day, t, TZ);
           rows.push({
-            id: String(nextId++), barberId: b.id, clientName: `${NAMES[n % NAMES.length]} ${SURNAMES[Math.floor(n / NAMES.length)]}`, clientPhone: `+55119${String(80000000 + n).padStart(8, "0")}`,
+            id: String(nextId++), barberId: b.id, clientName: client.name, clientId: client.id, serviceId: svc.id,
+            subscriptionId: viaPlan ? sub!.id : null,
             serviceName: svc.name.pt, startsAt, endsAt: new Date(startsAt.getTime() + svc.durationMin * 60_000),
             status: startsAt.getTime() < Date.now() ? (r() < 0.05 ? "no_show" : "done") : "confirmed", price: viaPlan ? 0 : svc.price, viaPlan,
           });
@@ -79,14 +130,6 @@ function seed() {
     }
   }
 }
-
-const SUBS = [
-  { clientName: "Marcos", phone: "+5511980000000", planId: "p-club", endInDays: 2 },
-  { clientName: "Pedro", phone: "+5511980000001", planId: "p-full", endInDays: -3 },
-  { clientName: "Thiago", phone: "+5511980000002", planId: "p-club", endInDays: 4 },
-  { clientName: "Lucas", phone: "+5511980000003", planId: "p-full", endInDays: 18 },
-  { clientName: "Bruno", phone: "+5511980000004", planId: "p-club", endInDays: 25 },
-];
 
 const live = (x: AgendaItem) => x.status !== "cancelled" && x.status !== "no_show";
 
@@ -110,8 +153,14 @@ export const demoRepo: Repo = {
       return { ok: false, error: "slot_taken" };
     }
     const id = String(nextId++);
-    rows.push({ id, barberId: input.barberId, clientName: input.name || "Cliente", clientPhone: input.phone ?? "", serviceName: svc.name.pt,
-      startsAt: input.startsAt, endsAt, status: "confirmed", price: svc.price, viaPlan: false });
+    let client = input.phone ? store.clients.find((c) => c.phone === input.phone) : undefined;
+    if (!client) {
+      client = { id: demoId("c"), name: input.name || "Cliente", phone: input.phone ?? "", lang: "pt", createdAt: new Date(),
+        preferredBarberId: input.barberId, notes: "", photoConsentAt: null, noShows: 0 };
+      store.clients.push(client);
+    }
+    rows.push({ id, barberId: input.barberId, clientName: client.name, clientId: client.id, serviceId: svc.id, subscriptionId: null,
+      serviceName: svc.name.pt, startsAt: input.startsAt, endsAt, status: "confirmed", price: svc.price, viaPlan: false });
     return { ok: true, id };
   },
   async agenda(_shopId, from, to) {
@@ -121,13 +170,17 @@ export const demoRepo: Repo = {
   async dashboard(_shopId, monthStart, now): Promise<Dashboard> {
     seed();
     const month = rows.filter((x) => x.status === "done" && x.startsAt >= monthStart && x.startsAt <= now);
-    const subs = SUBS.map((s) => ({ ...s, plan: bundle.plans.find((p) => p.id === s.planId)!, periodEnd: new Date(now.getTime() + s.endInDays * 86_400_000) }));
-    const planRevenue = subs.filter((s) => s.endInDays >= 0).reduce((t, s) => t + s.plan.price, 0);
+    const subs = store.subscriptions.filter((x) => !x.cancelledAt).map((x) => {
+      const c = store.clients.find((c) => c.id === x.clientId)!;
+      return { ...x, clientName: c.name, phone: c.phone, plan: bundle.plans.find((p) => p.id === x.planId)! };
+    });
+    const planRevenue = store.payments.filter((p) => p.status === "paid" && p.paidAt && p.paidAt >= monthStart && p.paidAt <= now)
+      .reduce((t, p) => t + p.amount, 0);
     return {
       revenueMonth: month.reduce((t, x) => t + x.price, 0) + planRevenue,
       appointmentsMonth: month.length,
-      clients: new Set(rows.map((x) => x.clientPhone)).size,
-      activeSubscriptions: subs.filter((s) => s.endInDays >= 0).length,
+      clients: store.clients.length,
+      activeSubscriptions: subs.filter((s) => daysUntil(s.periodEnd, now) >= 0).length,
       planAlerts: subs.filter((s) => daysUntil(s.periodEnd, now) <= bundle.shop.planAlertDays)
         .map((s) => ({ clientName: s.clientName, phone: s.phone, planName: s.plan.name, periodEnd: s.periodEnd }))
         .sort((a, b) => +a.periodEnd - +b.periodEnd),

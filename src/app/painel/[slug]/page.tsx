@@ -1,7 +1,5 @@
-import { notFound, redirect } from "next/navigation";
-import { currentUser, supabaseServer } from "@/lib/supabase";
+import { requireStaff } from "@/lib/staff";
 import Link from "next/link";
-import { repo } from "@/data";
 import { atMinutes, dayInZone, minutesInZone, weekday } from "@/core/time";
 import { daysUntil } from "@/core/plans";
 import { formatMoney } from "@/core/money";
@@ -13,20 +11,8 @@ const PX_PER_MIN = 1.1;
 
 export default async function Painel({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const r = repo();
-  const b = await r.shopBySlug(slug);
-  if (!b) notFound();
+  const { r, bundle: b } = await requireStaff(slug);
   const { shop, barbers } = b;
-  if (r.mode === "supabase") {
-    const user = await currentUser();
-    if (!user) redirect(`/entrar?next=/painel/${slug}`);
-    const db = await supabaseServer();
-    const { data: member } = await db.from("shop_members").select("role").eq("shop_id", shop.id).eq("user_id", user.id).maybeSingle();
-    if (!member) {
-      return <main className="mx-auto max-w-md px-6 py-20 text-center"><h1 className="text-xl font-semibold">Sem acesso</h1>
-        <p className="mt-2 text-sm text-neutral-500">Sua conta não faz parte da equipe de {shop.name}. Peça ao dono para te adicionar.</p></main>;
-    }
-  }
   const tz = shop.timezone;
   const now = new Date();
   const today = dayInZone(now, tz);
@@ -49,7 +35,7 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
           <p className="text-xs uppercase tracking-wide text-neutral-500">Painel</p>
           <h1 className="text-2xl font-bold">{shop.name}</h1>
         </div>
-        <Link href={`/b/${shop.slug}`} className="btn">Abrir agendamento do cliente</Link>
+        <Link href={`/painel/${shop.slug}/agenda`} className="btn">Agenda completa</Link>
       </header>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
