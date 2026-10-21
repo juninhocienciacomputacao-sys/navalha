@@ -40,22 +40,27 @@ Observações:
 5. Para conferir, abra **Table Editor** no menu da esquerda. As tabelas `shops`, `barbers`, `services` e outras devem aparecer.
 6. Em **Project Settings → API**, anote a **Project URL** e a chave **anon public**. Elas serão usadas no próximo passo.
 
-## Parte 3: login pelo WhatsApp e banco ligado
+## Parte 3: login pelo celular e banco ligado
 
-O código de entrada vai pelo WhatsApp por meio da **Twilio**, empresa que o Supabase usa para enviar mensagens. A Twilio é paga por mensagem (centavos) e dá crédito de teste ao criar a conta.
+O código de entrada é enviado pela **Twilio**, empresa que o Supabase usa para mandar mensagens. O app tenta mandar pelo WhatsApp e, se o WhatsApp ainda não estiver liberado, manda por SMS. Para testar, a conta grátis da Twilio basta: ela vem com crédito e manda SMS para o número que você confirmou no cadastro. O envio pelo WhatsApp para qualquer cliente entra na etapa da conta Meta Business.
 
-1. Crie a conta em **twilio.com**. Anote o **Account SID** e o **Auth Token** da tela inicial.
-2. Na Twilio, ative o WhatsApp em **Messaging → Try it out → Send a WhatsApp message** (para testes) e anote o número remetente.
-3. No Supabase, abra **Authentication → Sign In / Providers → Phone**:
+1. Crie a conta em **twilio.com** (Sign up). Confirme o e-mail e o seu celular.
+2. No painel da Twilio, clique em **Get a phone number** para ganhar um número de teste.
+3. Ainda na tela inicial, anote o **Account SID** e o **Auth Token** (clique em "Show" para ver).
+4. Vá em **Messaging → Services → Create Messaging Service**:
+   - dê o nome `navalha` e avance;
+   - em **Add Senders**, adicione o número de teste;
+   - termine e anote o **Messaging Service SID** (começa com `MG`).
+5. No Supabase, abra **Authentication → Sign In / Providers → Phone**:
    - ative **Enable Phone provider**;
    - em **SMS provider** escolha **Twilio**;
-   - cole o Account SID, o Auth Token e o número;
+   - cole o **Account SID**, o **Auth Token** e o **Message Service SID**;
    - clique em **Save**.
-4. Na Vercel, abra **Project → Settings → Environment Variables** e crie:
+6. Na Vercel, abra **Project → Settings → Environment Variables** e crie:
    - `NEXT_PUBLIC_SUPABASE_URL` com a Project URL;
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` com a chave anon public.
-5. Em **Deployments**, clique nos três pontinhos do último e em **Redeploy**.
-6. Abra `https://navalha-coral.vercel.app/nova-barbearia`, entre com o seu WhatsApp e cadastre a sua barbearia. Você vira o dono dela e cai direto no painel.
+7. Em **Deployments**, clique nos três pontinhos do último e em **Redeploy**.
+8. Abra `https://navalha-coral.vercel.app/nova-barbearia`, entre com o seu WhatsApp e cadastre a sua barbearia. Você vira o dono dela e cai direto no painel.
 
 Daqui em diante o painel só abre para a equipe da barbearia, e o cliente confirma o agendamento entrando com o WhatsApp.
 

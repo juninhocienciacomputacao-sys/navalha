@@ -9,6 +9,7 @@ export default function Login({ next }: { next: string }) {
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [via, setVia] = useState<"whatsapp" | "sms">("whatsapp");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -17,8 +18,16 @@ export default function Login({ next }: { next: string }) {
     const e164 = toE164(phone);
     if (!e164) return setError("Confira o número com DDD.");
     setBusy(true); setError("");
-    const { error } = await supabaseBrowser().auth.signInWithOtp({ phone: e164, options: { channel: "whatsapp" } });
+    const auth = supabaseBrowser().auth;
+    // Tenta pelo WhatsApp; se o WhatsApp ainda não estiver liberado no provedor, manda por SMS.
+    let via: "whatsapp" | "sms" = "whatsapp";
+    let { error } = await auth.signInWithOtp({ phone: e164, options: { channel: "whatsapp" } });
+    if (error && error.status !== 429) {
+      via = "sms";
+      ({ error } = await auth.signInWithOtp({ phone: e164, options: { channel: "sms" } }));
+    }
     setBusy(false);
+    setVia(via);
     if (error) return setError(error.status === 429 ? "Muitas tentativas. Espere um minuto." : "Não conseguimos enviar o código. Tente de novo.");
     setSentTo(e164);
   }
@@ -44,7 +53,7 @@ export default function Login({ next }: { next: string }) {
         </>
       ) : (
         <>
-          <p className="text-sm text-neutral-600 dark:text-neutral-300">Mandamos um código para <b>{sentTo}</b>.</p>
+          <p className="text-sm text-neutral-600 dark:text-neutral-300">Mandamos um código {via === "sms" ? "por SMS" : "pelo WhatsApp"} para <b>{sentTo}</b>.</p>
           <input className="input text-center text-2xl tracking-[0.4em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
             value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => e.key === "Enter" && verify()} />
           <button className="btn w-full" disabled={busy || code.length < 6} onClick={verify}>Entrar</button>
