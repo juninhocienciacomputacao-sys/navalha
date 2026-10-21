@@ -15,8 +15,8 @@ São duas partes. A **Parte 1** já deixa o app online com a barbearia de demons
 
 Pronto, já dá para testar:
 
-- `https://SEU-LINK.vercel.app/b/dom-bigode` é o app do cliente. Abra no celular e faça um agendamento.
-- `https://SEU-LINK.vercel.app/painel/dom-bigode` é o painel do dono.
+- `https://navalha-coral.vercel.app/b/dom-bigode` é o app do cliente. Abra no celular e faça um agendamento.
+- `https://navalha-coral.vercel.app/painel/dom-bigode` é o painel do dono.
 
 Observações:
 
@@ -57,7 +57,7 @@ O código de entrada vai pelo WhatsApp por meio da **Twilio**, empresa que o Sup
    - `NEXT_PUBLIC_SUPABASE_URL` com a Project URL;
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` com a chave anon public.
 5. Em **Deployments**, clique nos três pontinhos do último e em **Redeploy**.
-6. Abra `https://SEU-LINK.vercel.app/nova-barbearia`, entre com o seu WhatsApp e cadastre a sua barbearia. Você vira o dono dela e cai direto no painel.
+6. Abra `https://navalha-coral.vercel.app/nova-barbearia`, entre com o seu WhatsApp e cadastre a sua barbearia. Você vira o dono dela e cai direto no painel.
 
 Daqui em diante o painel só abre para a equipe da barbearia, e o cliente confirma o agendamento entrando com o WhatsApp.
 
