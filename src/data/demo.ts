@@ -126,7 +126,7 @@ function seed() {
             id: String(ids.n++), barberId: b.id, clientName: client.name, clientId: client.id, serviceId: svc.id,
             subscriptionId: viaPlan ? sub!.id : null,
             serviceName: svc.name.pt, startsAt, endsAt: new Date(startsAt.getTime() + svc.durationMin * 60_000),
-            status: startsAt.getTime() < Date.now() ? (r() < 0.05 ? "no_show" : "done") : "confirmed", price: viaPlan ? 0 : svc.price, viaPlan,
+            status: startsAt.getTime() > Date.now() ? "confirmed" : startsAt.getTime() + svc.durationMin * 60_000 > Date.now() ? "in_service" : r() < 0.05 ? "no_show" : "done", price: viaPlan ? 0 : svc.price, viaPlan,
           });
           t += svc.durationMin;
         } else t += 15;

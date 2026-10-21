@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { repo } from "@/data";
 import { currentUser } from "@/lib/supabase";
 import { requireStaff } from "@/lib/staff";
-import { dayInZone, minutesInZone } from "@/core/time";
+import { addDays, atMinutes, dayInZone, minutesInZone } from "@/core/time";
 import { qrEncode, qrSvgPath } from "@/core/qr";
 import { toHHMM } from "@/core/types";
 import { freeGaps } from "@/core/walkin";
@@ -46,131 +46,140 @@ export default async function Tv({ params }: { params: Promise<{ slug: string }>
   const now = new Date();
   const today = dayInZone(now, tz);
   const nowMin = minutesInZone(now, tz);
-  const hours = dayHours(b, today);
-  const [appts, queue] = await Promise.all([listAppointments(b, ...dayRange(b, today)), listQueue(b)]);
-  const forecast = queueForecast(b, today, appts, queue, now);
+
+  // Depois do expediente (ou em dia fechado) a TV já mostra a próxima agenda.
+  let day = today;
+  let ref = nowMin;
+  const todayHours = dayHours(b, today);
+  if (!todayHours || nowMin >= todayHours.close) {
+    for (let i = 1; i <= 7; i++) {
+      const d = addDays(today, i);
+      if (dayHours(b, d)) { day = d; ref = -1; break; }
+    }
+  }
+  const isToday = day === today;
+  const hours = dayHours(b, day);
+  const [appts, queue] = await Promise.all([listAppointments(b, ...dayRange(b, day)), listQueue(b)]);
+  const todayAppts = isToday ? appts : await listAppointments(b, ...dayRange(b, today));
+  const forecast = queueForecast(b, today, todayAppts, queue, now);
   const busy = busyByBarber(b, appts);
-  const reserves = reservesFor(b, today);
-  const openRes = openReserveBlocks(b, today, appts).filter((r) => r.end > nowMin);
-  const minLen = Math.min(...b.services.map((s) => s.durationMin), 30);
+  const reserves = reservesFor(b, day);
+  const openRes = openReserveBlocks(b, day, appts).filter((r) => r.end > ref);
 
   const url = await bookingUrl(slug);
   const shortUrl = url.replace(/^https?:\/\//, "");
   let qr: ReturnType<typeof qrSvgPath> | null = null;
   try { qr = qrSvgPath(qrEncode(url)); } catch { qr = null; }
 
-  const dateLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(now);
+  const noon = atMinutes(day, 12 * 60, tz);
+  const dateLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "short", day: "numeric", month: "short" })
+    .format(noon).replace(/\./g, "").toLowerCase();
+  const title = isToday ? "Agenda de hoje" : day === addDays(today, 1) ? "Agenda de amanhã" : "Próxima agenda";
   const svc = (id: string | null) => b.services.find((s) => s.id === id)?.name.pt ?? "Atendimento";
+  const m = (d: Date) => minutesInZone(d, tz);
+
+  type Row = { key: string; start: number; kind: "now" | "appt" | "free" | "walk"; name: string; sub: string };
+  const timeline = (barberId: string): Row[] => {
+    if (!hours) return [];
+    const rows: Row[] = [];
+    for (const a of appts) {
+      if (a.barberId !== barberId || !isLive(a.status) || a.status === "done" || m(a.endsAt) <= ref) continue;
+      const isNow = isToday && (a.status === "in_service" || m(a.startsAt) <= ref);
+      rows.push({ key: a.id, start: m(a.startsAt), kind: isNow ? "now" : "appt", name: shortName(a.clientName),
+        sub: `${a.serviceName}${a.source === "walk_in" ? " · encaixe" : ""}` });
+    }
+    for (const r of openRes) if (r.barberId === barberId) rows.push({ key: `w${r.start}`, start: r.start, kind: "walk", name: "ENCAIXE", sub: "sem horário marcado" });
+    const from = ref < 0 ? hours.open : ref;
+    for (const g of freeGaps(hours, [...(busy.get(barberId) ?? []), ...(reserves.get(barberId) ?? [])], from, 25)) {
+      rows.push({ key: `f${g.start}`, start: g.start, kind: "free", name: "LIVRE", sub: `${g.end - g.start} min disponíveis` });
+    }
+    return rows.sort((x, y) => x.start - y.start).slice(0, 9);
+  };
+  const initials = (n: string) => n.split(/\s+/).map((x) => x[0]).join("").slice(0, 2).toUpperCase();
+
+  const rowCls = {
+    now: "bg-[#dcaa52] text-[#1a1206]",
+    appt: "bg-[#18252e]",
+    free: "border-2 border-dashed border-[#2f7a57]",
+    walk: "border-2 border-dashed border-[#dcaa52]",
+  };
+  const nameCls = { now: "text-[#1a1206]", appt: "text-white", free: "text-[#4cc08a]", walk: "text-[#dcaa52]" };
+  const subCls = { now: "text-[#1a1206]/80", appt: "text-[#9fb0ba]", free: "text-[#9fb0ba]", walk: "text-[#9fb0ba]" };
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-neutral-950 p-8 text-white">
+    <main className="flex h-screen flex-col overflow-hidden bg-[#0b1217] p-[1.4vw] text-[#e8eef1] [font-size:clamp(13px,1.05vw,26px)]">
       <AutoRefresh seconds={30} />
-      <header className="mb-6 flex items-center gap-8">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-5xl font-black uppercase tracking-tight">{shop.name}</h1>
-          <p className="mt-1 text-2xl capitalize text-neutral-400">{hours ? `Agenda de ${dateLabel}` : `${dateLabel} · fechado hoje`}</p>
+      <header className="mb-[1.2vw] flex items-center gap-[1.4vw]">
+        <div className="h-[3.2vw] w-[0.9vw] shrink-0 rounded-full bg-[repeating-linear-gradient(135deg,#c0392b_0_6px,#fff_6px_12px,#1f5fa8_12px_18px,#fff_18px_24px)]" aria-hidden />
+        <div className="min-w-0">
+          <p className="whitespace-nowrap text-[1.9em] font-black uppercase leading-none tracking-tight text-white">{shop.name}</p>
+          <p className="mt-[0.3em] whitespace-nowrap text-[#9fb0ba]">{title} · {dateLabel}</p>
         </div>
-        <div className="flex items-center gap-4 rounded-2xl bg-amber-500 px-5 py-3 text-neutral-950">
+        <div className="ml-auto flex items-center gap-[0.8vw]">
           {qr && (
-            <svg viewBox={qr.viewBox} className="h-28 w-28 shrink-0 rounded-lg bg-white" shapeRendering="crispEdges" role="img" aria-label="QR code para agendar">
+            <svg viewBox={qr.viewBox} className="h-[5.2vw] w-[5.2vw] shrink-0 rounded-md bg-white p-[3px]" shapeRendering="crispEdges" role="img" aria-label="QR code para agendar">
               <path d={qr.d} fill="#000" />
             </svg>
           )}
-          <div>
-            <p className="text-lg font-semibold">Agende pelo celular</p>
-            <p className="text-3xl font-black">{shortUrl}</p>
-            {qr && <p className="text-base font-medium">Aponte a câmera para o código</p>}
+          <div className="max-w-[22vw]">
+            <p className="text-[0.85em] text-[#9fb0ba]">Aponte a câmera para agendar ou entrar na fila</p>
+            <p className="truncate font-bold text-[#dcaa52]">{shortUrl}</p>
           </div>
         </div>
         <Clock tz={tz} initial={toHHMM(nowMin)} />
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-5" style={{ gridTemplateColumns: `repeat(${b.barbers.length}, minmax(0, 1fr)) minmax(0, 1.1fr)` }}>
+      <div className="grid min-h-0 flex-1 gap-[0.7vw]" style={{ gridTemplateColumns: `repeat(${b.barbers.length + 1}, minmax(0, 1fr))` }}>
         {b.barbers.map((br) => {
-          const mine = appts.filter((a) => a.barberId === br.id && isLive(a.status));
-          const m = (d: Date) => minutesInZone(d, tz);
-          const chair = mine.find((a) => a.status === "in_service")
-            ?? mine.find((a) => a.status !== "done" && m(a.startsAt) <= nowMin && m(a.endsAt) > nowMin);
-          const next = mine.filter((a) => a.id !== chair?.id && a.status !== "done" && a.status !== "in_service" && m(a.startsAt) > nowMin).slice(0, 4);
-          const gaps = hours && nowMin < hours.close
-            ? freeGaps(hours, [...(busy.get(br.id) ?? []), ...(reserves.get(br.id) ?? [])], nowMin, minLen).slice(0, 3) : [];
-          const walk = openRes.filter((r) => r.barberId === br.id).slice(0, 2);
+          const rows = timeline(br.id);
           return (
-            <section key={br.id} className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-neutral-900 p-5">
-              <h2 className="mb-4 flex items-center gap-3 text-4xl font-black">
-                <span className="h-6 w-6 shrink-0 rounded-full" style={{ background: br.color ?? "#777" }} />
+            <section key={br.id} className="flex min-h-0 flex-col gap-[0.45vw] overflow-hidden rounded-[0.9vw] bg-[#131e26] p-[0.8vw]">
+              <h2 className="mb-[0.2vw] flex items-center gap-[0.55vw] text-[1.45em] font-bold text-white">
+                <span className="grid h-[2.1vw] w-[2.1vw] shrink-0 place-items-center rounded-full text-[0.6em] font-black text-[#0b1217]" style={{ background: br.color ?? "#9fb0ba" }}>{initials(br.name)}</span>
                 <span className="truncate">{br.name}</span>
               </h2>
-              <div className="rounded-2xl p-4" style={{ background: chair ? (br.color ?? "#444") : "#262626" }}>
-                <p className="text-lg font-semibold uppercase tracking-wide opacity-80">Na cadeira agora</p>
-                <p className="truncate text-4xl font-black">{chair ? shortName(chair.clientName) : "Livre"}</p>
-                {chair && <p className="truncate text-xl opacity-90">{chair.serviceName} · até {toHHMM(m(chair.endsAt))}</p>}
-              </div>
-              <p className="mb-2 mt-5 text-lg font-semibold uppercase tracking-wide text-neutral-400">Próximos</p>
-              <ul className="space-y-2">
-                {next.map((a) => (
-                  <li key={a.id} className="flex items-baseline gap-3 text-3xl">
-                    <span className="w-24 shrink-0 font-bold tabular-nums text-neutral-400">{toHHMM(m(a.startsAt))}</span>
-                    <span className="truncate font-semibold">{shortName(a.clientName)}</span>
-                  </li>
-                ))}
-                {next.length === 0 && <li className="text-2xl text-neutral-500">Ninguém marcado</li>}
-              </ul>
-              <p className="mb-2 mt-5 text-lg font-semibold uppercase tracking-wide text-emerald-400">Horários livres</p>
-              <ul className="space-y-2">
-                {gaps.map((g) => (
-                  <li key={g.start} className="flex items-baseline gap-3 text-3xl text-emerald-300">
-                    <span className="w-24 shrink-0 font-bold tabular-nums">{toHHMM(g.start)}</span>
-                    <span className="truncate text-2xl">{g.end - g.start >= 120 ? "livre" : `${g.end - g.start} min`}</span>
-                  </li>
-                ))}
-                {walk.map((r) => (
-                  <li key={`w${r.start}`} className="flex items-baseline gap-3 text-3xl text-amber-300">
-                    <span className="w-24 shrink-0 font-bold tabular-nums">{toHHMM(r.start)}</span>
-                    <span className="truncate text-2xl">encaixe</span>
-                  </li>
-                ))}
-                {gaps.length === 0 && walk.length === 0 && <li className="text-2xl text-neutral-500">{!hours || nowMin >= hours.close ? "Encerrado por hoje" : "Lotado hoje"}</li>}
-              </ul>
+              {rows.map((x) => (
+                <div key={x.key} className={`grid grid-cols-[3.6em_minmax(0,1fr)] gap-x-[0.5vw] rounded-[0.55vw] px-[0.6vw] py-[0.45vw] ${rowCls[x.kind]}`}>
+                  <span className={`row-span-2 self-center font-mono text-[0.92em] ${x.kind === "now" ? "font-bold text-[#1a1206]" : "text-[#9fb0ba]"}`}>{x.kind === "now" ? "AGORA" : toHHMM(x.start)}</span>
+                  <span className={`truncate font-bold ${nameCls[x.kind]}`}>{x.name}</span>
+                  <span className={`truncate text-[0.8em] ${subCls[x.kind]}`}>{x.sub}</span>
+                </div>
+              ))}
+              {rows.length === 0 && <p className="text-[#9fb0ba]">{hours ? "Agenda cheia" : "Fechado"}</p>}
             </section>
           );
         })}
 
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-3xl bg-amber-950/60 p-5 ring-1 ring-amber-700/50">
-          <h2 className="text-4xl font-black text-amber-400">Sem horário</h2>
-          <p className="mb-4 text-xl text-amber-200/70">Fila de chegada</p>
-          <ol className="space-y-3">
-            {queue.slice(0, 7).map((q, i) => {
-              const f = forecast[i];
-              const wait = f ? Math.max(0, f.time - nowMin) : null;
-              return (
-                <li key={q.id} className="flex items-center gap-4">
-                  <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-amber-500 text-2xl font-black text-neutral-950">{i + 1}º</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-3xl font-bold">{shortName(q.name)}</span>
-                    <span className="block truncate text-xl text-amber-200/80">
-                      {svc(q.serviceId)} · {f ? (wait! <= 5 ? "já já" : `espera ~${wait} min`) : "sem vaga hoje"}
-                    </span>
-                  </span>
-                </li>
-              );
-            })}
-            {queue.length === 0 && <li className="text-2xl text-amber-200/70">Ninguém na fila</li>}
-            {queue.length > 7 && <li className="text-xl text-amber-200/70">+ {queue.length - 7} esperando</li>}
-          </ol>
+        <section className="flex min-h-0 flex-col gap-[0.45vw] overflow-hidden rounded-[0.9vw] bg-[#1d1a12] p-[0.8vw]">
+          <h2 className="text-[1.45em] font-bold text-[#dcaa52]">Sem horário</h2>
+          <p className="text-[0.9em] text-[#9fb0ba]">Fila de chegada</p>
+          {queue.slice(0, 6).map((q, i) => {
+            const f = forecast[i];
+            const wait = f ? Math.max(0, f.time - nowMin) : null;
+            return (
+              <div key={q.id} className="grid grid-cols-[3.6em_minmax(0,1fr)] gap-x-[0.5vw] rounded-[0.55vw] bg-[#18252e] px-[0.6vw] py-[0.45vw]">
+                <span className="row-span-2 self-center font-mono text-[0.92em] text-[#9fb0ba]">{i + 1}º</span>
+                <span className="truncate font-bold text-white">{shortName(q.name)}</span>
+                <span className="truncate text-[0.8em] text-[#9fb0ba]">
+                  {svc(q.serviceId)} · {f ? (wait! <= 5 ? "já já" : `espera ~${wait} min`) : "aguardando vaga"}
+                </span>
+              </div>
+            );
+          })}
+          {queue.length === 0 && <p className="text-[#9fb0ba]">Ninguém na fila</p>}
+          {queue.length > 6 && <p className="text-[0.9em] text-[#9fb0ba]">+ {queue.length - 6} esperando</p>}
           {openRes.length > 0 && (
             <>
-              <p className="mb-2 mt-6 text-lg font-semibold uppercase tracking-wide text-amber-400">Próximos encaixes</p>
-              <ul className="space-y-1">
-                {openRes.slice(0, 4).map((r) => (
-                  <li key={r.barberId + r.start} className="text-2xl text-amber-100">
-                    <b className="tabular-nums">{toHHMM(r.start)}</b> · {b.barbers.find((x) => x.id === r.barberId)?.name}
-                  </li>
-                ))}
-              </ul>
+              <p className="mt-[0.5vw] text-[0.9em] text-[#9fb0ba]">Próximos encaixes</p>
+              {openRes.slice(0, 4).map((r) => (
+                <div key={r.barberId + r.start} className="grid grid-cols-[3.6em_minmax(0,1fr)] gap-x-[0.5vw] rounded-[0.55vw] border-2 border-dashed border-[#dcaa52] px-[0.6vw] py-[0.45vw]">
+                  <span className="row-span-2 self-center font-mono text-[0.92em] text-[#9fb0ba]">{toHHMM(r.start)}</span>
+                  <span className="truncate font-bold text-[#dcaa52]">{b.barbers.find((x) => x.id === r.barberId)?.name}</span>
+                  <span className="truncate text-[0.8em] text-[#9fb0ba]">reservado</span>
+                </div>
+              ))}
             </>
           )}
-          <p className="mt-auto pt-4 text-lg text-amber-200/70">Chegou sem horário? Fale com a recepção.</p>
         </section>
       </div>
     </main>

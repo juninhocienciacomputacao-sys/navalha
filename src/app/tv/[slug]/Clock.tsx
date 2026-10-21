@@ -12,11 +12,11 @@ export default function Clock({ tz, initial }: { tz: string; initial: string }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tz]);
   return (
-    <div className="flex items-center gap-4">
-      <span className="text-7xl font-black tabular-nums tracking-tight">{time}</span>
+    <div className="flex items-center gap-[0.8vw]">
+      <span className="font-mono text-[2.3em] font-semibold tabular-nums text-white">{time}</span>
       <button
         onClick={() => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {})}
-        className="rounded-xl border border-neutral-700 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-800">
+        className="rounded-lg border border-[#2a3a44] bg-[#18252e] px-[0.8em] py-[0.4em] text-[0.8em] text-[#e8eef1] hover:bg-[#223340]">
         Tela cheia
       </button>
     </div>
