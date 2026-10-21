@@ -33,12 +33,10 @@ Observações:
    - **Region:** **South America (São Paulo)**
    - Clique em **Create new project** e espere uns 2 minutos.
 3. No menu da esquerda, abra **SQL Editor**.
-4. Crie o banco colando os arquivos abaixo, nesta ordem. Para cada um:
-   - Abra o arquivo no GitHub.
-   - Clique no botão **Copy raw file** (ícone de copiar, no canto direito do arquivo).
-   - No SQL Editor, clique em **+ New query**, cole e clique em **Run**. Tem que aparecer **Success**.
-
-   Os arquivos, em ordem: **todos** os da pasta `supabase/migrations`, do `0001` ao último número, e depois `supabase/seed.sql` (opcional: cria a barbearia de exemplo Dom Bigode).
+4. Crie o banco colando **um arquivo só**:
+   - No GitHub, abra o arquivo `supabase/tudo-em-um.sql` e clique em **Copy raw file**. É o ícone de copiar, no canto direito do arquivo.
+   - No SQL Editor, clique em **+ New query**, cole e clique em **Run**. Tem que aparecer **Success. No rows returned**.
+   - Esse arquivo é só para projeto novo e roda uma vez. Se aparecer o erro "already exists", é porque ele já foi aplicado.
 5. Para conferir, abra **Table Editor** no menu da esquerda. As tabelas `shops`, `barbers`, `services` e outras devem aparecer.
 6. Em **Project Settings → API**, anote a **Project URL** e a chave **anon public**. Elas serão usadas no próximo passo.
 
