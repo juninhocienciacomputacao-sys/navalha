@@ -49,6 +49,9 @@ export default async function AgendaPage({ params, searchParams }: { params: Pro
   const queueViews = toQueueViews(b, queue, queueForecast(b, today, todayAppts, queue));
   const todayHours = dayHours(b, today);
   const freeReservesToday = openReserveBlocks(b, today, todayAppts).length;
+  const todayClients = [...new Map(todayAppts.filter((a) => a.clientId && a.status !== "cancelled")
+    .sort((x, y) => x.startsAt.getTime() - y.startsAt.getTime())
+    .map((a) => [a.clientId!, { id: a.clientId!, name: a.clientName, phone: a.phone }])).values()];
 
   const weekStart = addDays(day, -((weekday(day) + 6) % 7));
   const step = week ? 7 : 1;
@@ -70,7 +73,7 @@ export default async function AgendaPage({ params, searchParams }: { params: Pro
         </div>
       </header>
 
-      <QueuePanel slug={slug} queue={queueViews} barbers={allBarbers} services={services} freeReserves={freeReservesToday} open={Boolean(todayHours)} />
+      <QueuePanel slug={slug} queue={queueViews} barbers={allBarbers} services={services} freeReserves={freeReservesToday} open={Boolean(todayHours)} todayClients={todayClients} />
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex items-center overflow-hidden rounded-xl border border-neutral-200 bg-white text-sm dark:border-neutral-700 dark:bg-neutral-900">

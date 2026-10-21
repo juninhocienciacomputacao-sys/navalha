@@ -4,8 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toHHMM } from "@/core/types";
 import { STATUS_TEXT, errorText, type BarberView, type DayItem, type ViewStatus } from "@/modules/agenda/view";
-import { changeStatus, reschedule } from "./actions";
-import { TimePicker } from "./NewAppt";
+import { APPT_NOTE_PRESETS } from "@/core/presets";
+import { changeStatus, noteOnClient, reschedule } from "./actions";
+import { DayPicker, TimePicker } from "./NewAppt";
 import Sheet, { Label } from "./Sheet";
 
 const ACTIONS: { status: Exclude<ViewStatus, "pending">; label: string; cls: string }[] = [
@@ -27,6 +28,20 @@ export default function ApptSheet({ slug, today, day, item, barbers, onClose }: 
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const barber = barbers.find((b) => b.id === item.barberId);
+  const [noted, setNoted] = useState<string[]>([]);
+  const [otherNote, setOtherNote] = useState<string | null>(null);
+  const [noteMsg, setNoteMsg] = useState("");
+
+  function note(text: string) {
+    const t = text.trim();
+    if (!t) return;
+    setNoteMsg("");
+    start(async () => {
+      const r = await noteOnClient(slug, item.id, t);
+      if (r.ok) { setNoted((n) => [...n, t]); setOtherNote(null); setNoteMsg("Anotado na ficha do cliente."); }
+      else setNoteMsg(r.error);
+    });
+  }
 
   function setStatus(status: Exclude<ViewStatus, "pending">) {
     if (status === "cancelled" && !confirm(`Cancelar o horário de ${item.clientName}?`)) return;
@@ -68,13 +83,38 @@ export default function ApptSheet({ slug, today, day, item, barbers, onClose }: 
         ))}
       </div>
 
+      {item.phone && (
+        <>
+          <Label>Anotar na ficha</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {APPT_NOTE_PRESETS.map((n) => {
+              const on = noted.includes(n);
+              return (
+                <button key={n} type="button" disabled={pending || on} onClick={() => note(n)}
+                  className={`chip px-3 py-1.5 ${on ? "chip-on" : ""}`}>{on ? "✓ " : ""}{n}</button>
+              );
+            })}
+            <button type="button" className={`chip px-3 py-1.5 ${otherNote !== null ? "chip-on" : ""}`}
+              onClick={() => setOtherNote((v) => (v === null ? "" : null))}>Outro…</button>
+          </div>
+          {otherNote !== null && (
+            <div className="mt-2 flex gap-2">
+              <input className="input min-w-0 flex-1" autoFocus maxLength={200} placeholder="Escreva a anotação" value={otherNote}
+                onChange={(e) => setOtherNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && note(otherNote)} />
+              <button type="button" className="btn shrink-0" disabled={pending || !otherNote.trim()} onClick={() => note(otherNote)}>Anotar</button>
+            </div>
+          )}
+          {noteMsg && <p className="mt-1.5 text-xs text-neutral-500">{noteMsg}</p>}
+        </>
+      )}
+
       {!moving ? (
         <button className="chip mt-4 w-full" onClick={() => setMoving(true)}>Remarcar (outro dia, horário ou barbeiro)</button>
       ) : (
         <div className="mt-4 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
           <p className="text-sm font-semibold">Remarcar</p>
           <Label>Dia</Label>
-          <input type="date" className="input" min={today} value={newDay} onChange={(e) => e.target.value && setNewDay(e.target.value)} />
+          <DayPicker today={today} value={newDay} onChange={setNewDay} />
           <Label>Barbeiro</Label>
           <div className="flex flex-wrap gap-1.5">
             {barbers.map((b) => (

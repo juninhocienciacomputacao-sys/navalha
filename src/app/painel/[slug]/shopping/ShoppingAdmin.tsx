@@ -8,6 +8,9 @@ import { tx } from "@/i18n";
 import { CATEGORY_LABEL, type PartnerProduct, type PartnerStore, type ProductCategory } from "@/modules/shopping/types";
 import ProductArt from "@/modules/shopping/ProductArt";
 import { featureProductAction, toggleStoreAction } from "./actions";
+import { PresetNumber } from "@/components/pick";
+
+const BUYER_STEPS = [2, 5, 8, 10, 15, 20, 30];
 
 export default function ShoppingAdmin({ slug, currency, lang, stores, products, enabled, featured, clients, canEdit }: {
   slug: string; currency: string; lang: Lang; stores: PartnerStore[]; products: PartnerProduct[];
@@ -21,6 +24,7 @@ export default function ShoppingAdmin({ slug, currency, lang, stores, products, 
   const [cat, setCat] = useState<ProductCategory | "all">("all");
   const [buyers, setBuyers] = useState(8);
   const [base, setBase] = useState(Math.max(clients, 1));
+  const baseSteps = [...new Set([...(clients > 0 ? [clients] : []), 50, 100, 200, 300, 500, 1000])].sort((a, b) => a - b);
 
   const storeName = (id: string) => stores.find((s) => s.id === id)?.name ?? "";
   const visibleStores = stores.filter((s) => on[s.id]);
@@ -90,15 +94,14 @@ export default function ShoppingAdmin({ slug, currency, lang, stores, products, 
         <section className="card h-fit">
           <h2 className="font-semibold">Quanto dá para ganhar</h2>
           <p className="mb-3 text-xs text-neutral-500">Estimativa por mês, com as lojas ligadas agora.</p>
-          <label className="block text-sm">
-            Clientes que usam o app: <b className="tabular-nums">{base}</b>
-            <input type="range" min={10} max={Math.max(500, clients * 2)} step={10} value={base} onChange={(e) => setBase(Number(e.target.value))}
-              className="mt-1 w-full accent-amber-500" />
-          </label>
-          <label className="mt-3 block text-sm">
-            Compram pelo menos 1 produto no mês: <b className="tabular-nums">{buyers}%</b>
-            <input type="range" min={1} max={40} value={buyers} onChange={(e) => setBuyers(Number(e.target.value))} className="mt-1 w-full accent-amber-500" />
-          </label>
+          <div className="text-sm">
+            <p className="mb-1.5">Clientes que usam o app{clients > 0 ? <span className="text-xs text-neutral-500"> (hoje você tem {clients})</span> : null}</p>
+            <PresetNumber name="Clientes que usam o app" presets={baseSteps} value={base} min={1} max={100_000} step={10} onChange={(v) => setBase(v ?? 1)} />
+          </div>
+          <div className="mt-3 text-sm">
+            <p className="mb-1.5">Compram pelo menos 1 produto no mês</p>
+            <PresetNumber name="Compram no mês" presets={BUYER_STEPS} value={buyers} format={(n) => `${n}%`} min={1} max={100} onChange={(v) => setBuyers(v ?? 1)} />
+          </div>
           <dl className="mt-4 grid grid-cols-[1fr_auto] gap-y-1.5 text-sm">
             <dt className="text-neutral-500">Pedidos</dt><dd className="text-right tabular-nums">{est.orders}</dd>
             <dt className="text-neutral-500">Ticket médio</dt><dd className="text-right tabular-nums">{money(Math.round(avgTicket * 100) / 100)}</dd>

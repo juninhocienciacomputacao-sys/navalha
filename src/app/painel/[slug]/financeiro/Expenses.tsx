@@ -3,14 +3,36 @@
 import { useState, useTransition } from "react";
 import type { Expense, ExpenseInMonth } from "@/core/finance";
 import { formatMoney } from "@/core/money";
+import { EXPENSE_PRESETS, priceSteps, suggest } from "@/core/presets";
+import { Choice, PresetNumber, PresetText, SelectList } from "@/components/pick";
 import type { Lang } from "@/core/types";
 import { deleteExpenseAction, saveExpenseAction, setExpensePaidAction } from "./actions";
 
 const CATEGORIES = ["Estrutura", "Pessoal", "Insumos", "Marketing", "Serviços", "Manutenção", "Impostos", "Outros"];
 
+/** Ao escolher uma conta pronta, já sugere categoria e tipo (o dono pode trocar). */
+const PRESET_HINT: Record<string, { category: string; kind: Expense["kind"] }> = {
+  "Aluguel": { category: "Estrutura", kind: "fixed" }, "Energia": { category: "Estrutura", kind: "variable" },
+  "Água": { category: "Estrutura", kind: "variable" }, "Internet": { category: "Estrutura", kind: "fixed" },
+  "Telefone": { category: "Estrutura", kind: "fixed" }, "Produtos": { category: "Insumos", kind: "variable" },
+  "Lâminas e descartáveis": { category: "Insumos", kind: "variable" }, "Manutenção": { category: "Manutenção", kind: "variable" },
+  "Limpeza": { category: "Serviços", kind: "variable" }, "Marketing": { category: "Marketing", kind: "variable" },
+  "Contador": { category: "Serviços", kind: "fixed" }, "Impostos": { category: "Impostos", kind: "variable" },
+  "Sistema": { category: "Serviços", kind: "fixed" }, "Café e recepção": { category: "Insumos", kind: "variable" },
+  "Salário": { category: "Pessoal", kind: "fixed" },
+};
+const DUE_DAYS = [1, 5, 10, 15, 20, 25, 30];
+
+// datas como "AAAA-MM-DD", contadas em UTC para não depender do fuso do aparelho
+const addDays = (d: string, n: number) => new Date(Date.parse(d + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
+const addMonths = (m: string, n: number) => { const d = new Date(m + "-15T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); };
+const lastDay = (m: string) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate();
+
+const L = ({ children }: { children: React.ReactNode }) => <span className="mb-1.5 block text-xs font-medium text-neutral-500">{children}</span>;
+
 type Draft = {
-  id?: string; name: string; category: string; kind: Expense["kind"]; amount: string; recurring: boolean;
-  dueDay: string; dueDate: string; startsOn: string;
+  id?: string; name: string; category: string; kind: Expense["kind"]; amount: number | null; recurring: boolean;
+  dueDay: number; dueDate: string; startsOn: string;
 };
 
 const STATE: Record<ExpenseInMonth["state"], { label: (d: number) => string; cls: string }> = {
@@ -26,7 +48,10 @@ export default function Expenses({ slug, month, monthLabel, items, totals, curre
   currency: string; lang: Lang; today: string;
 }) {
   const money = (n: number) => formatMoney(n, currency, lang);
-  const blank = (): Draft => ({ name: "", category: "Estrutura", kind: "fixed", amount: "", recurring: true, dueDay: "10",
+  const loc = lang === "pt" ? "pt-BR" : lang === "es" ? "es-ES" : "en-US";
+  const dayLabel = (d: string) => new Intl.DateTimeFormat(loc, { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(d + "T12:00:00Z"));
+  const monthLabelOf = (m: string) => new Intl.DateTimeFormat(loc, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(m + "-15T12:00:00Z"));
+  const blank = (): Draft => ({ name: "", category: "Estrutura", kind: "fixed", amount: null, recurring: true, dueDay: 10,
     dueDate: month === today.slice(0, 7) ? today : `${month}-10`, startsOn: `${month}-01` });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState("");
@@ -34,8 +59,8 @@ export default function Expenses({ slug, month, monthLabel, items, totals, curre
   const [pending, go] = useTransition();
 
   const edit = (e: Expense) => setDraft({
-    id: e.id, name: e.name, category: e.category, kind: e.kind, amount: String(e.amount), recurring: e.recurring,
-    dueDay: String(e.dueDay ?? 10), dueDate: e.dueDate ?? `${month}-10`, startsOn: e.startsOn,
+    id: e.id, name: e.name, category: e.category, kind: e.kind, amount: e.amount, recurring: e.recurring,
+    dueDay: e.dueDay ?? 10, dueDate: e.dueDate ?? `${month}-10`, startsOn: e.startsOn,
   });
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) => go(async () => {
     const r = await fn();
@@ -44,14 +69,42 @@ export default function Expenses({ slug, month, monthLabel, items, totals, curre
   const submit = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!draft) return;
-    const amount = Number(draft.amount.replace(",", "."));
+    if (draft.name.trim().length < 2) { setError("Escolha qual é a conta."); return; }
+    if (draft.amount == null) { setError("Escolha o valor da conta."); return; }
     run(() => saveExpenseAction(slug, {
-      id: draft.id, name: draft.name, category: draft.category, kind: draft.kind, amount: Number.isFinite(amount) ? amount : -1,
-      recurring: draft.recurring, dueDay: draft.recurring ? Number(draft.dueDay) : null, dueDate: draft.recurring ? null : draft.dueDate,
+      id: draft.id, name: draft.name, category: draft.category, kind: draft.kind, amount: draft.amount ?? -1,
+      recurring: draft.recurring, dueDay: draft.recurring ? draft.dueDay : null, dueDate: draft.recurring ? null : draft.dueDate,
       startsOn: draft.recurring ? draft.startsOn : draft.dueDate,
     }), () => setDraft(null));
   };
-  const field = (k: keyof Draft) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setDraft((d) => d && ({ ...d, [k]: ev.target.value }));
+  const patch = (p: Partial<Draft>) => setDraft((d) => d && ({ ...d, ...p }));
+  const pickName = (name: string) => setDraft((d) => d && ({ ...d, name, ...(!d.id && PRESET_HINT[name] ? PRESET_HINT[name] : {}) }));
+
+  // vencimento da conta avulsa: atalhos + lista dos dias (31 para trás até o fim do mês / 60 dias à frente)
+  const quickDates = (() => {
+    const out: { value: string; label: string }[] = [
+      { value: today, label: "Hoje" }, { value: addDays(today, -1), label: "Ontem" }, { value: addDays(today, 1), label: "Amanhã" },
+    ];
+    for (const n of [5, 10, 15, 20, 25]) {
+      const v = `${month}-${String(n).padStart(2, "0")}`;
+      if (!out.some((o) => o.value === v)) out.push({ value: v, label: `dia ${n}` });
+    }
+    return out;
+  })();
+  const dateList = (() => {
+    const from = [addDays(today, -31), `${month}-01`].sort()[0];
+    const to = [addDays(today, 60), `${month}-${lastDay(month)}`].sort().at(-1)!;
+    const out: string[] = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
+    if (draft && !out.includes(draft.dueDate)) out.push(draft.dueDate);
+    return out.sort().map((d) => ({ value: d, label: d === today ? `Hoje (${dayLabel(d)})` : dayLabel(d) }));
+  })();
+  const monthList = (() => {
+    const out = Array.from({ length: 16 }, (_, i) => addMonths(month, i - 12));
+    const cur = draft?.startsOn.slice(0, 7);
+    if (cur && !out.includes(cur)) out.unshift(cur);
+    return out.sort().map((m) => ({ value: `${m}-01`, label: monthLabelOf(m) }));
+  })();
 
   return (
     <section className="card mt-6">
@@ -64,42 +117,44 @@ export default function Expenses({ slug, month, monthLabel, items, totals, curre
       </header>
 
       {draft && (
-        <form onSubmit={submit} className="mb-4 grid gap-3 rounded-xl border border-amber-300 p-3 sm:grid-cols-2 lg:grid-cols-4 dark:border-amber-800">
-          <label className="text-sm sm:col-span-2"><span className="mb-1 block text-xs text-neutral-500">Descrição</span>
-            <input className="input" required value={draft.name} onChange={field("name")} placeholder="Ex.: Conta de luz" maxLength={80} /></label>
-          <label className="text-sm"><span className="mb-1 block text-xs text-neutral-500">Valor ({currency})</span>
-            <input className="input tabular-nums" required inputMode="decimal" value={draft.amount} onChange={field("amount")} placeholder="500" /></label>
-          <label className="text-sm"><span className="mb-1 block text-xs text-neutral-500">Categoria</span>
-            <select className="input" value={draft.category} onChange={field("category")}>
-              {[...new Set([...CATEGORIES, draft.category])].map((c) => <option key={c}>{c}</option>)}
-            </select></label>
-          <fieldset className="text-sm">
-            <legend className="mb-1 text-xs text-neutral-500">Tipo</legend>
-            <div className="flex gap-2">
-              <button type="button" className={`chip ${draft.kind === "fixed" ? "chip-on" : ""}`} onClick={() => setDraft({ ...draft, kind: "fixed" })}>Fixa</button>
-              <button type="button" className={`chip ${draft.kind === "variable" ? "chip-on" : ""}`} onClick={() => setDraft({ ...draft, kind: "variable" })}>Variável</button>
-            </div>
+        <form key={draft.id ?? "new"} onSubmit={submit} className="mb-4 grid min-w-0 gap-4 rounded-xl border border-amber-300 p-3 lg:grid-cols-2 dark:border-amber-800">
+          <div className="min-w-0 lg:col-span-2"><L>Qual conta?</L>
+            <PresetText name="Descrição" presets={EXPENSE_PRESETS} value={draft.name} onChange={pickName} otherPlaceholder="Ex.: Conta de luz" /></div>
+          <div className="min-w-0 lg:col-span-2"><L>Valor ({currency})</L>
+            <PresetNumber name="Valor" presets={priceSteps(currency, "expense")} value={draft.amount} onChange={(v) => patch({ amount: v })}
+              format={money} step={suggest(10, currency)} max={10_000_000} /></div>
+          <div className="min-w-0"><L>Categoria</L>
+            <Choice name="Categoria" size="sm" options={[...new Set([...CATEGORIES, draft.category])].map((c) => ({ value: c, label: c }))}
+              value={draft.category} onChange={(v) => patch({ category: v })} /></div>
+          <div className="min-w-0"><L>Tipo</L>
+            <Choice name="Tipo" options={[{ value: "fixed" as const, label: "Fixa" }, { value: "variable" as const, label: "Variável" }]}
+              value={draft.kind} onChange={(v) => patch({ kind: v })} />
             <p className="mt-1 text-[11px] text-neutral-500">Fixa: mesmo valor todo mês (aluguel). Variável: muda (luz, produtos).</p>
-          </fieldset>
-          <fieldset className="text-sm">
-            <legend className="mb-1 text-xs text-neutral-500">Repete?</legend>
-            <div className="flex gap-2">
-              <button type="button" className={`chip ${draft.recurring ? "chip-on" : ""}`} onClick={() => setDraft({ ...draft, recurring: true })}>Todo mês</button>
-              <button type="button" className={`chip ${!draft.recurring ? "chip-on" : ""}`} onClick={() => setDraft({ ...draft, recurring: false })}>Uma vez</button>
-            </div>
-          </fieldset>
+          </div>
+          <div className="min-w-0"><L>Repete?</L>
+            <Choice name="Repete?" options={[{ value: true, label: "Todo mês" }, { value: false, label: "Uma vez" }]}
+              value={draft.recurring} onChange={(v) => patch({ recurring: v })} /></div>
           {draft.recurring ? (
             <>
-              <label className="text-sm"><span className="mb-1 block text-xs text-neutral-500">Vence todo dia</span>
-                <input className="input" type="number" min={1} max={31} required value={draft.dueDay} onChange={field("dueDay")} /></label>
-              <label className="text-sm"><span className="mb-1 block text-xs text-neutral-500">A partir de</span>
-                <input className="input" type="date" required value={draft.startsOn} onChange={field("startsOn")} /></label>
+              <div className="min-w-0"><L>Vence todo dia</L>
+                <PresetNumber name="Dia do vencimento" presets={DUE_DAYS} value={draft.dueDay} onChange={(v) => patch({ dueDay: v ?? 10 })} min={1} max={31} /></div>
+              <div className="min-w-0"><L>A partir de</L>
+                <div className="space-y-2">
+                  <Choice name="A partir de" size="sm" value={draft.startsOn}
+                    options={[{ value: `${addMonths(month, -1)}-01`, label: "Mês passado" }, { value: `${month}-01`, label: "Este mês" }, { value: `${addMonths(month, 1)}-01`, label: "Próximo mês" }]}
+                    onChange={(v) => patch({ startsOn: v })} />
+                  <SelectList name="Mês de início" className="w-full sm:w-64 first-letter:uppercase" options={monthList}
+                    value={`${draft.startsOn.slice(0, 7)}-01`} onChange={(v) => patch({ startsOn: v })} />
+                </div></div>
             </>
           ) : (
-            <label className="text-sm"><span className="mb-1 block text-xs text-neutral-500">Vencimento</span>
-              <input className="input" type="date" required value={draft.dueDate} onChange={field("dueDate")} /></label>
+            <div className="min-w-0"><L>Vencimento</L>
+              <div className="space-y-2">
+                <Choice name="Vencimento" size="sm" options={quickDates} value={draft.dueDate} onChange={(v) => patch({ dueDate: v })} />
+                <SelectList name="Outra data" className="w-full sm:w-64" options={dateList} value={draft.dueDate} onChange={(v) => patch({ dueDate: v })} />
+              </div></div>
           )}
-          <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
+          <div className="flex flex-wrap items-end gap-2 lg:col-span-2">
             <button className="btn" type="submit" disabled={pending}>{pending ? "Salvando…" : draft.id ? "Salvar alterações" : "Adicionar conta"}</button>
             <button className="chip" type="button" onClick={() => { setDraft(null); setError(""); }}>Cancelar</button>
             {draft.id && draft.recurring && <span className="text-xs text-neutral-500">Mudar uma conta que repete altera todos os meses.</span>}

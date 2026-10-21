@@ -8,6 +8,8 @@ import { formatMoney } from "@/core/money";
 import { expiryMessage, matchesQuery, subMatches, waLink, type SubFilter } from "@/core/planboard";
 import type { PayMethod, PlanItem, SubRow } from "@/modules/plans/data";
 import { Avatar, Badge, fmtDay, fmtPhone, planBadge, WhatsAppLink } from "@/modules/clients/ui";
+import { Choice } from "@/components/pick";
+import { DAY_STEPS } from "@/core/presets";
 import { alertDaysAction, cancelAction, payAction, sellAction } from "./actions";
 
 type Row = SubRow & { left: number };
@@ -179,7 +181,7 @@ function SellPlan({ slug, plans, barbers, clients, currency, lang, busy, initial
   if (!plans.length) return <p className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-500 dark:bg-neutral-950">Crie ou ative um plano no catálogo antes de vender.</p>;
   return (
     <form onSubmit={submit} className="mt-4 space-y-3 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-950">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="max-w-md">
         <div className="relative text-sm">
           <span className={label}>Cliente</span>
           {chosen ? (
@@ -207,18 +209,15 @@ function SellPlan({ slug, plans, barbers, clients, currency, lang, busy, initial
             <p className="mt-1 text-xs text-neutral-500">Ninguém com esse nome. <Link className="underline" href={`/painel/${slug}/clientes`}>Cadastre o cliente</Link> primeiro.</p>
           )}
         </div>
-        <label className="text-sm"><span className={label}>Plano</span>
-          <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
-            {plans.map((p) => <option key={p.id} value={p.id}>{p.name} · {formatMoney(p.price, currency, lang)}</option>)}
-          </select>
-        </label>
-        <label className="text-sm"><span className={label}>Quem vendeu</span>
-          <select className="input" value={barberId} onChange={(e) => setBarberId(e.target.value)}>
-            <option value="">Ninguém da equipe (balcão)</option>
-            {barbers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </label>
       </div>
+      <fieldset className="min-w-0 text-sm"><legend className={label}>Plano</legend>
+        <Choice name="Plano" value={planId} onChange={setPlanId}
+          options={plans.map((p) => ({ value: p.id, label: p.name, hint: formatMoney(p.price, currency, lang) }))} />
+      </fieldset>
+      <fieldset className="min-w-0 text-sm"><legend className={label}>Quem vendeu</legend>
+        <Choice name="Quem vendeu" value={barberId} onChange={setBarberId}
+          options={[{ value: "", label: "Balcão (ninguém da equipe)" }, ...barbers.map((b) => ({ value: b.id, label: b.name }))]} />
+      </fieldset>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-neutral-500">Pagou {plan ? formatMoney(plan.price, currency, lang) : ""} por</span>
         {METHODS.map(([k, l]) => (
@@ -233,21 +232,22 @@ function SellPlan({ slug, plans, barbers, clients, currency, lang, busy, initial
 }
 
 function AlertDays({ slug, value, canManage }: { slug: string; value: number; canManage: boolean }) {
-  const [v, setV] = useState(String(value));
+  const [v, setV] = useState(value);
   const [pending, start] = useTransition();
   const [error, setError] = useState("");
   if (!canManage) return <span className="text-xs text-neutral-500">Aviso {value} dias antes do vencimento</span>;
-  const save = () => {
-    if (Number(v) === value) return;
-    start(async () => { const r = await alertDaysAction(slug, Number(v)); setError(r.ok ? "" : r.error); });
+  const steps = [...new Set([...DAY_STEPS, value])].sort((a, b) => a - b);
+  const save = (n: number) => {
+    setV(n);
+    if (n === value) return;
+    start(async () => { const r = await alertDaysAction(slug, n); setError(r.ok ? "" : r.error); });
   };
   return (
-    <label className="flex items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-300">
-      Avisar com
-      <input className="input !w-16 !px-2 !py-1.5 text-center" inputMode="numeric" value={v} onChange={(e) => setV(e.target.value)}
-        onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } }} disabled={pending} aria-label="Dias de antecedência do aviso" />
-      dias
+    <div className={`flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-300 ${pending ? "opacity-60" : ""}`}>
+      <span>Avisar quantos dias antes de vencer</span>
+      <Choice size="sm" name="Dias de antecedência do aviso" value={v} onChange={save}
+        options={steps.map((d) => ({ value: d, label: `${d} dia${d === 1 ? "" : "s"}` }))} />
       {error && <span className="text-red-600">{error}</span>}
-    </label>
+    </div>
   );
 }

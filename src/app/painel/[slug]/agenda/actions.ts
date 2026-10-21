@@ -6,10 +6,11 @@ import { assertStaff } from "@/lib/staff";
 import { atMinutes, dayInZone } from "@/core/time";
 import { toHHMM } from "@/core/types";
 import {
-  addToQueue, closeQueueEntry, createAppointment, getQueueEntry, listAppointments,
+  addToQueue, closeQueueEntry, createAppointment, getAppointment, getQueueEntry, listAppointments,
   rescheduleAppointment, searchClients, setAppointmentStatus,
 } from "@/modules/agenda/data";
 import { dayRange, fitNow, freeTimes, notBeforeFor } from "@/modules/agenda/plan";
+import { getClient, listClients, updateClient } from "@/modules/clients/data";
 
 const slugS = z.string().min(1).max(80);
 const dayS = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -30,6 +31,34 @@ export async function loadFreeTimes(slug: string, day: string, serviceId: string
 export async function findClients(slug: string, q: string) {
   const { bundle } = await assertStaff(slugS.parse(slug));
   return searchClients(bundle, z.string().max(60).parse(q));
+}
+
+/** Clientes que vieram por último (para tocar em vez de buscar). */
+export async function recentClients(slug: string, limit = 12) {
+  const { bundle } = await assertStaff(slugS.parse(slug));
+  const rows = await listClients(bundle);
+  return rows
+    .sort((a, z) => (z.lastVisit ?? z.createdAt).localeCompare(a.lastVisit ?? a.createdAt))
+    .slice(0, Math.min(30, limit))
+    .map((c) => ({ id: c.id, name: c.name, phone: c.phone }));
+}
+
+/** Anotação rápida (ex.: "Chegou atrasado") que vai para a ficha do cliente do atendimento, com a data. */
+export async function noteOnClient(slug: string, apptId: string, note: string) {
+  const { bundle } = await assertStaff(slugS.parse(slug));
+  const appt = await getAppointment(bundle, idS.parse(apptId));
+  if (!appt?.clientId) return { ok: false as const, error: "Esse atendimento não tem cliente cadastrado." };
+  const c = await getClient(bundle, appt.clientId);
+  if (!c) return { ok: false as const, error: "Cliente não encontrado." };
+  const tz = bundle.shop.timezone;
+  const [, m, d] = dayInZone(appt.startsAt, tz).split("-");
+  const line = `${d}/${m}: ${z.string().trim().min(1).max(200).parse(note)}`;
+  const notes = (c.notes ? `${c.notes}; ${line}` : line).slice(-2000);
+  const r = await updateClient(bundle, c.id, {
+    name: c.name, phone: c.phone, preferredBarberId: c.preferredBarberId, preferences: c.preferences, notes, photoConsent: Boolean(c.photoConsentAt),
+  });
+  if (r.ok) revalidatePath(`/painel/${slug}/clientes/${c.id}`);
+  return r.ok ? { ok: true as const } : { ok: false as const, error: r.error };
 }
 
 const createS = z.object({

@@ -200,7 +200,7 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
             <b>{tx(service.name, lang)}</b> {L.with} <b>{barber(pick.barberId).name}</b> · <span className="capitalize">{dl(day)}</span> {toHHMM(pick.minutes)}
             <span className="ml-1 text-neutral-500">· {priceOf(serviceId)}</span>
           </p>
-          {!defaultName && (
+          {loggedIn && !defaultName && (
             <input className="input" placeholder={L.yourName} value={name} onChange={(e) => setName(e.target.value)} />
           )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}

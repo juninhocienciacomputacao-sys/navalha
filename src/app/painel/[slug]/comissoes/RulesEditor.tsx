@@ -7,6 +7,18 @@ import { formatMoney } from "@/core/money";
 import type { Lang } from "@/core/types";
 import type { PayoutPeriod } from "@/core/finance";
 import { saveRulesAction } from "./actions";
+import { Choice, PresetNumber, SelectList, Stepper, Toggle } from "@/components/pick";
+import { PERCENT_STEPS, priceSteps, suggest } from "@/core/presets";
+
+const PRODUCT_PCT = [0, 5, 10, 15, 20, 25, 30];
+const SALE_BONUS_PCT = [0, 5, 10, 15, 20, 25, 30, 50];
+const CARD_FEE_PCT = [1, 1.5, 2, 2.5, 3, 3.5, 4, 5];
+const TIER_PCT = [1, 2, 3, 5, 8, 10, 15];
+const PAYOUTS: { value: PayoutPeriod; label: string; hint: string }[] = [
+  { value: "weekly", label: "Toda semana", hint: "segunda a domingo" },
+  { value: "biweekly", label: "A cada quinzena", hint: "1 a 15 e 16 ao fim" },
+  { value: "monthly", label: "Todo mês", hint: "" },
+];
 
 interface Stored { rules: CommissionRules; payout: PayoutPeriod; pixSplit: boolean }
 
@@ -38,6 +50,14 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
   const set = (patch: Partial<CommissionRules>) => { setS({ ...s, rules: { ...r, ...patch } }); setMsg(null); };
   const money = (n: number) => formatMoney(Math.round(n * 100) / 100, currency, lang);
   const dirty = JSON.stringify(s) !== JSON.stringify(saved);
+  const [ver, setVer] = useState(0); // remonta os botões ao desfazer
+  const pctFmt = (n: number) => `${String(n).replace(".", ",")}%`;
+  const m = (brl: number) => suggest(brl, currency);
+  const zeroAs = (label: string) => (n: number) => (n === 0 ? label : money(n));
+  const visitSteps = [...new Set([5, 10, 15, 20, 25, 30, 35, 40, 50].map(m))];
+  const suppliesSteps = [...new Set([0, 1, 2, 3, 5, 8, 10].map(m))];
+  const tierSteps = [...new Set([3000, 5000, 8000, 10000, 12000, 15000, 20000, 30000].map(m))];
+  const floorSteps = [...new Set([0, 1000, 1500, 2000, 2500, 3000, 4000].map(m))];
 
   // dados do exemplo ao vivo
   const examplePlans = plans.length ? plans : [{ id: "x", name: "Plano de exemplo", price: 100, quotaUses: 4 }];
@@ -75,7 +95,7 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
   const exTier = [...tiers].sort((a, b) => b.above - a.above).find((t) => exTurnover > t.above);
 
   return (
-    <div className="space-y-4 pb-24">
+    <div key={ver} className="min-w-0 space-y-4 pb-24">
       <Section n={1} title="Como cada profissional ganha" sub="Comissão sobre o que faz, ou aluguel da cadeira. Muda-se na tela Equipe.">
         <ul className="divide-y divide-neutral-100 text-sm dark:divide-neutral-800">
           {barbers.map((b) => (
@@ -104,33 +124,37 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
             </button>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap gap-4">
+        <div className="mt-4">
           {(r.planModel === "usage_split" || r.planModel === "quota_split") && (
-            <NumField label="% do barbeiro sobre o valor do plano" suffix="%" value={r.planPct} max={100} onChange={(v) => set({ planPct: v })} />
+            <Field label="% do barbeiro sobre o valor do plano">
+              <PresetNumber name="% do plano" presets={PERCENT_STEPS} value={r.planPct} format={pctFmt} max={100} onChange={(v) => set({ planPct: v ?? 0 })} />
+            </Field>
           )}
           {r.planModel === "list_price" && (
-            <NumField label="% sobre o preço de tabela" suffix="%" value={r.listPricePct} max={100} onChange={(v) => set({ listPricePct: v })} />
+            <Field label="% sobre o preço de tabela">
+              <PresetNumber name="% do preço de tabela" presets={PERCENT_STEPS} value={r.listPricePct} format={pctFmt} max={100} onChange={(v) => set({ listPricePct: v ?? 0 })} />
+            </Field>
           )}
           {r.planModel === "fixed" && (
-            <NumField label="Valor por atendimento" prefix={currency} value={r.fixedPerVisit} step={0.5} onChange={(v) => set({ fixedPerVisit: v })} />
+            <Field label="Valor por atendimento">
+              <PresetNumber name="Valor fixo" presets={visitSteps} value={r.fixedPerVisit} format={money} step={m(1)} max={10_000_000} onChange={(v) => set({ fixedPerVisit: v ?? 0 })} />
+            </Field>
           )}
         </div>
 
         <Example>
           <div className="flex flex-wrap gap-2">
-            <select className="input w-auto" value={plan.id} onChange={(e) => setPlanId(e.target.value)} aria-label="Plano do exemplo">
-              {examplePlans.map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.price)}</option>)}
-            </select>
+            <SelectList name="Plano do exemplo" className="w-full sm:w-auto" value={plan.id} onChange={setPlanId}
+              options={examplePlans.map((p) => ({ value: p.id, label: `${p.name} · ${money(p.price)}` }))} />
             {r.planModel === "list_price" && (
-              <select className="input w-auto" value={svc.id} onChange={(e) => setSvcId(e.target.value)} aria-label="Serviço do exemplo">
-                {exServices.map((x) => <option key={x.id} value={x.id}>{x.name} · {money(x.price)}</option>)}
-              </select>
+              <SelectList name="Serviço do exemplo" className="w-full sm:w-auto" value={svc.id} onChange={setSvcId}
+                options={exServices.map((x) => ({ value: x.id, label: `${x.name} · ${money(x.price)}` }))} />
             )}
           </div>
-          <label className="mt-3 flex items-center gap-3 text-sm">
-            <span className="whitespace-nowrap">Cliente veio <b className="tabular-nums">{uses}</b> {uses === 1 ? "vez" : "vezes"} no mês</span>
-            <input type="range" min={1} max={8} value={uses} onChange={(e) => setUses(Number(e.target.value))} className="flex-1 accent-amber-500" />
-          </label>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+            <span>Cliente veio no mês:</span>
+            <Stepper name="Usos no mês" value={uses} min={1} max={8} onChange={setUses} format={(n) => `${n} ${n === 1 ? "vez" : "vezes"}`} />
+          </div>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="text-neutral-500">Cálculo</dt><dd>{how}</dd>
             <dt className="text-neutral-500">Por atendimento</dt><dd className="tabular-nums">{money(perVisit)}</dd>
@@ -156,21 +180,31 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
       <Section n={4} title="Bônus e descontos">
         <div className="space-y-5">
           <Opt title="Comissão em produtos vendidos" ex={`Vendeu ${money(200)} em pomadas → ganha ${money((200 * r.productPct) / 100)}.`}>
-            <NumField label="% sobre a venda" suffix="%" value={r.productPct} max={100} onChange={(v) => set({ productPct: v })} />
+            <Field label="% sobre a venda">
+              <PresetNumber name="% de produtos" presets={PRODUCT_PCT} value={r.productPct} format={pctFmt} max={100} onChange={(v) => set({ productPct: v ?? 0 })} />
+            </Field>
           </Opt>
           <Opt title="Bônus por vender plano" ex={`Vendeu o ${plan.name} (${money(plan.price)}) → ganha ${money((plan.price * r.planSaleBonusPct) / 100)} uma vez, na 1ª mensalidade.`}>
-            <NumField label="% da primeira mensalidade" suffix="%" value={r.planSaleBonusPct} max={100} onChange={(v) => set({ planSaleBonusPct: v })} />
+            <Field label="% da primeira mensalidade">
+              <PresetNumber name="Bônus por plano vendido" presets={SALE_BONUS_PCT} value={r.planSaleBonusPct} format={pctFmt} max={100} onChange={(v) => set({ planSaleBonusPct: v ?? 0 })} />
+            </Field>
           </Opt>
           <Opt title="Descontar a taxa do cartão"
             ex={r.deductCardFee
               ? `Corte de ${money(svc.price)} no cartão, comissão de ${exPct}% = ${money((svc.price * exPct) / 100)}; desconta ${r.cardFeePct}% disso: ${money((svc.price * exPct * r.cardFeePct) / 10000)}.`
               : "A taxa do cartão fica toda com a barbearia."}>
             <Toggle on={r.deductCardFee} onChange={(v) => set({ deductCardFee: v })} label="Descontar da comissão a parte da taxa" />
-            {r.deductCardFee && <NumField label="Taxa média da maquininha" suffix="%" value={r.cardFeePct} max={100} step={0.1} onChange={(v) => set({ cardFeePct: v })} />}
+            {r.deductCardFee && (
+              <Field label="Taxa média da maquininha">
+                <PresetNumber name="Taxa do cartão" presets={CARD_FEE_PCT} value={r.cardFeePct} format={pctFmt} max={100} step={0.1} onChange={(v) => set({ cardFeePct: v ?? 0 })} />
+              </Field>
+            )}
           </Opt>
           <Opt title="Custo de insumos por atendimento"
             ex={r.suppliesPerVisit ? `80 atendimentos no mês → desconta ${money(80 * r.suppliesPerVisit)} (lâmina, toalha, gel).` : "Sem desconto de insumos."}>
-            <NumField label="Valor descontado por atendimento" prefix={currency} value={r.suppliesPerVisit} step={0.5} onChange={(v) => set({ suppliesPerVisit: v })} />
+            <Field label="Valor descontado por atendimento">
+              <PresetNumber name="Insumos" presets={suppliesSteps} value={r.suppliesPerVisit} format={zeroAs("Nada")} step={m(0.5)} max={10_000_000} onChange={(v) => set({ suppliesPerVisit: v ?? 0 })} />
+            </Field>
           </Opt>
         </div>
       </Section>
@@ -180,10 +214,19 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
         <p className="text-xs text-neutral-500">Faturamento = avulsos + preço de tabela dos atendimentos de plano. Vale o maior degrau atingido, como % extra sobre os avulsos.</p>
         <div className="mt-2 space-y-2">
           {tiers.map((t, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-2">
-              <NumField label="Acima de" prefix={currency} value={t.above} step={500} onChange={(v) => set({ tiers: tiers.map((x, j) => (j === i ? { ...x, above: v } : x)) })} />
-              <NumField label="ganha mais" suffix="%" value={t.extraPct} max={100} onChange={(v) => set({ tiers: tiers.map((x, j) => (j === i ? { ...x, extraPct: v } : x)) })} />
-              <button type="button" className="chip text-xs" onClick={() => set({ tiers: tiers.filter((_, j) => j !== i) })}>Remover</button>
+            <div key={`${i}-${tiers.length}`} className="space-y-3 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+              <div className="flex items-center justify-between gap-2">
+                <b className="text-sm">Degrau {i + 1}</b>
+                <button type="button" className="chip px-2.5 py-1 text-xs" onClick={() => set({ tiers: tiers.filter((_, j) => j !== i) })}>Remover</button>
+              </div>
+              <Field label="Faturou acima de">
+                <PresetNumber name="Meta" presets={tierSteps} value={t.above} format={money} step={m(500)} max={10_000_000}
+                  onChange={(v) => set({ tiers: tiers.map((x, j) => (j === i ? { ...x, above: v ?? 0 } : x)) })} />
+              </Field>
+              <Field label="ganha a mais sobre os avulsos">
+                <PresetNumber name="Bônus da meta" presets={TIER_PCT} value={t.extraPct} format={pctFmt} max={100}
+                  onChange={(v) => set({ tiers: tiers.map((x, j) => (j === i ? { ...x, extraPct: v ?? 0 } : x)) })} />
+              </Field>
             </div>
           ))}
           {tiers.length < 10 && (
@@ -200,7 +243,9 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
         </Example>
 
         <div className="mt-5">
-          <NumField label="Garantia mínima mensal (0 = sem garantia)" prefix={currency} value={r.monthlyFloor} step={100} onChange={(v) => set({ monthlyFloor: v })} />
+          <Field label="Garantia mínima mensal">
+            <PresetNumber name="Garantia mínima" presets={floorSteps} value={r.monthlyFloor} format={zeroAs("Sem garantia")} step={m(100)} max={10_000_000} onChange={(v) => set({ monthlyFloor: v ?? 0 })} />
+          </Field>
           <Example>
             {r.monthlyFloor
               ? <>Se a comissão do mês der {money(r.monthlyFloor * 0.7)}, a barbearia completa {money(r.monthlyFloor * 0.3)} e ele recebe {money(r.monthlyFloor)}.</>
@@ -210,14 +255,10 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
       </Section>
 
       <Section n={6} title="Pagamento">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium">Pagar a comissão</span>
-          <select className="input sm:w-64" value={s.payout} onChange={(e) => { setS({ ...s, payout: e.target.value as PayoutPeriod }); setMsg(null); }}>
-            <option value="weekly">toda semana (segunda a domingo)</option>
-            <option value="biweekly">a cada quinzena (1 a 15 e 16 ao fim)</option>
-            <option value="monthly">todo mês</option>
-          </select>
-        </label>
+        <Field label="Pagar a comissão">
+          <Choice name="Pagar a comissão" value={s.payout} onChange={(v) => { setS({ ...s, payout: v }); setMsg(null); }}
+            options={PAYOUTS.map((o) => ({ value: o.value, label: o.label, hint: o.hint || undefined }))} />
+        </Field>
         <div className="mt-4">
           <Toggle on={s.pixSplit} onChange={(v) => { setS({ ...s, pixSplit: v }); setMsg(null); }} label="Pix dividido: a comissão cai na conta do profissional na hora do pagamento" />
           <Hint>
@@ -231,7 +272,7 @@ export default function RulesEditor({ slug, initial, currency, lang, barbers, se
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur md:left-56 dark:border-neutral-800 dark:bg-neutral-900/95">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3">
           <button type="button" className="btn" onClick={save} disabled={pending || !dirty}>{pending ? "Salvando…" : "Salvar regras"}</button>
-          {dirty && !pending && <button type="button" className="chip" onClick={() => { setS(saved); setMsg(null); }}>Desfazer</button>}
+          {dirty && !pending && <button type="button" className="chip" onClick={() => { setS(saved); setMsg(null); setVer((v) => v + 1); }}>Desfazer</button>}
           {msg && <span className={`text-sm ${msg.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600"}`}>{msg.text}</span>}
           {!msg && dirty && <span className="text-sm text-neutral-500">Há mudanças não salvas.</span>}
         </div>
@@ -255,7 +296,7 @@ function Opt({ title, ex, children }: { title: string; ex: string; children: Rea
   return (
     <div>
       <p className="mb-2 text-sm font-semibold">{title}</p>
-      <div className="flex flex-wrap items-end gap-3">{children}</div>
+      <div className="space-y-3">{children}</div>
       <p className="mt-1 text-xs text-neutral-500"><b>Exemplo:</b> {ex}</p>
     </div>
   );
@@ -270,38 +311,11 @@ const Example = ({ children }: { children: React.ReactNode }) => (
 
 const Hint = ({ children }: { children: React.ReactNode }) => <p className="mt-2 text-xs text-neutral-500">{children}</p>;
 
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 text-sm font-medium">
-      <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-amber-500" : "bg-neutral-300 dark:bg-neutral-700"}`}>
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${on ? "left-5" : "left-0.5"}`} />
-      </button>
-      {label}
-    </label>
-  );
-}
-
-/** Campo numérico que aceita apagar e digitar de novo (guarda o texto enquanto edita). */
-function NumField({ label, value, onChange, prefix, suffix, step = 1, max }: {
-  label: string; value: number; onChange: (v: number) => void; prefix?: string; suffix?: string; step?: number; max?: number;
-}) {
-  const [text, setText] = useState(String(value));
-  const [last, setLast] = useState(value);
-  if (value !== last) { setLast(value); if (Number(text.replace(",", ".")) !== value) setText(String(value)); }
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-xs text-neutral-500">{label}</span>
-      <span className="flex items-center gap-1">
-        {prefix && <span className="text-xs text-neutral-500">{prefix}</span>}
-        <input className="input w-28 tabular-nums" inputMode="decimal" type="number" min={0} max={max} step={step} value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            const n = Number(e.target.value.replace(",", "."));
-            if (Number.isFinite(n) && n >= 0) { setLast(n); onChange(max !== undefined ? Math.min(max, n) : n); }
-          }} />
-        {suffix && <span className="text-xs text-neutral-500">{suffix}</span>}
-      </span>
-    </label>
+    <div className="min-w-0 text-sm">
+      <span className="mb-1.5 block text-xs font-medium text-neutral-500">{label}</span>
+      {children}
+    </div>
   );
 }

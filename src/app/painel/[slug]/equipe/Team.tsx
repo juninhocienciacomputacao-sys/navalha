@@ -6,7 +6,8 @@ import type { Lang } from "@/core/types";
 import { formatMoney } from "@/core/money";
 import { goalPace, totalOf, trend, type WeekStat } from "@/core/barberStats";
 import type { TeamBarber } from "@/modules/settings/data";
-import { COLORS } from "@/modules/settings/features";
+import { Choice, ColorChoice, PresetNumber, PresetText, Stepper } from "@/components/pick";
+import { BARBER_COLORS, BARBER_ROLE_PRESETS, GOAL_PRESETS, moneyStep, PERCENT_STEPS, priceSteps, suggest } from "@/core/presets";
 import { BarChart, LineChart } from "@/modules/settings/charts";
 import { saveBarberAction, setBarberActiveAction } from "./actions";
 
@@ -70,7 +71,7 @@ export default function Team({ slug, currency, lang, canEdit, barbers, stats, mo
 
       {editing && (
         <BarberForm key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing}
-          nextSort={barbers.length} pending={pending} error={error} currency={currency}
+          nextSort={barbers.length} pending={pending} error={error} currency={currency} lang={lang}
           onCancel={() => { setEditing(null); setError(""); }}
           onSave={(input) => run(() => saveBarberAction(slug, input), () => setEditing(null))} />
       )}
@@ -254,75 +255,72 @@ export default function Team({ slug, currency, lang, canEdit, barbers, stats, mo
 
 type BarberInput = Parameters<typeof saveBarberAction>[1];
 
-function BarberForm({ initial, nextSort, pending, error, currency, onSave, onCancel }: {
-  initial: TeamBarber | null; nextSort: number; pending: boolean; error: string; currency: string;
+function BarberForm({ initial, nextSort, pending, error, currency, lang, onSave, onCancel }: {
+  initial: TeamBarber | null; nextSort: number; pending: boolean; error: string; currency: string; lang: Lang;
   onSave: (input: BarberInput) => void; onCancel: () => void;
 }) {
-  const [f, setF] = useState({
-    name: initial?.name ?? "", roleTitle: initial?.roleTitle ?? "", color: initial?.color ?? COLORS[nextSort % COLORS.length],
-    pay: initial?.pay ?? "commission", commissionPct: String(initial?.commissionPct ?? 40), chairRent: String(initial?.chairRent ?? 0),
-    monthlyGoal: initial?.monthlyGoal === null || initial?.monthlyGoal === undefined ? "" : String(initial.monthlyGoal),
-    sort: String(initial?.sort ?? nextSort),
-  });
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
-  const num = (s: string) => Number(s.replace(",", ".")) || 0;
+  const [name, setName] = useState(initial?.name ?? "");
+  const [roleTitle, setRoleTitle] = useState(initial?.roleTitle ?? "");
+  const [color, setColor] = useState(initial?.color ?? BARBER_COLORS[nextSort % BARBER_COLORS.length]!);
+  const [pay, setPay] = useState<"commission" | "chair_rent">(initial?.pay ?? "commission");
+  const [commissionPct, setPct] = useState<number | null>(initial?.commissionPct ?? 40);
+  const [chairRent, setRent] = useState<number | null>(initial?.chairRent || null);
+  const [monthlyGoal, setGoal] = useState<number | null>(initial?.monthlyGoal ?? null);
+  const [sort, setSort] = useState(initial?.sort ?? nextSort);
+  const [localError, setLocalError] = useState("");
+  const money = (n: number) => formatMoney(n, currency, lang);
+  const rentSteps = priceSteps(currency, "expense");
+  const goalSteps = [...new Set(GOAL_PRESETS.map((v) => suggest(v, currency)))];
+  const colors = BARBER_COLORS.includes(color) ? BARBER_COLORS : [...BARBER_COLORS, color];
+  const label = "mb-2 block text-sm font-medium";
 
   return (
-    <form className="card mb-6 space-y-4" onSubmit={(e) => {
+    <form className="card mb-6 min-w-0 space-y-5" onSubmit={(e) => {
       e.preventDefault();
+      setLocalError("");
+      if (pay === "chair_rent" && chairRent == null) return setLocalError("Escolha o valor do aluguel.");
       onSave({
-        id: initial?.id, name: f.name, roleTitle: f.roleTitle, color: f.color, pay: f.pay as "commission" | "chair_rent",
-        commissionPct: num(f.commissionPct), chairRent: num(f.chairRent),
-        monthlyGoal: f.monthlyGoal.trim() ? num(f.monthlyGoal) : null, sort: Math.round(num(f.sort)),
+        id: initial?.id, name, roleTitle, color, pay,
+        commissionPct: commissionPct ?? 0, chairRent: chairRent ?? 0, monthlyGoal, sort,
       });
     }}>
       <h2 className="font-semibold">{initial ? `Editar ${initial.name}` : "Novo barbeiro"}</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm">Nome
-          <input className="input mt-1" required maxLength={60} value={f.name} onChange={set("name")} placeholder="Ex.: Rafa" />
-        </label>
-        <label className="text-sm">Especialidade
-          <input className="input mt-1" maxLength={80} value={f.roleTitle} onChange={set("roleTitle")} placeholder="Ex.: Degradê e navalhado" />
-        </label>
-      </div>
-      <div className="text-sm">
-        <p>Cor na agenda e nos gráficos</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {COLORS.map((c) => (
-            <button type="button" key={c} aria-label={`Cor ${c}`} aria-pressed={f.color === c} onClick={() => setF({ ...f, color: c })}
-              className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-white dark:ring-offset-neutral-900 ${f.color === c ? "ring-2 ring-amber-500" : ""}`} style={{ background: c }} />
-          ))}
-          <input type="color" aria-label="Outra cor" className="h-8 w-10 cursor-pointer rounded border border-neutral-300 bg-transparent dark:border-neutral-700" value={f.color} onChange={set("color")} />
+      <label className="block max-w-sm text-sm font-medium">Nome
+        <input className="input mt-1" required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Rafa" />
+      </label>
+      <fieldset className="min-w-0"><legend className={label}>Especialidade</legend>
+        <PresetText name="Especialidade" presets={BARBER_ROLE_PRESETS} value={roleTitle} onChange={setRoleTitle} otherPlaceholder="Especialidade" />
+        {roleTitle && <button type="button" className="mt-1 text-xs text-neutral-500 underline" onClick={() => setRoleTitle("")}>sem especialidade</button>}
+      </fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Cor na agenda e nos gráficos</legend>
+        <ColorChoice colors={colors} value={color} onChange={setColor} />
+      </fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Como ele recebe</legend>
+        <Choice name="Como ele recebe" value={pay} onChange={setPay}
+          options={[{ value: "commission", label: "Comissão (%)" }, { value: "chair_rent", label: "Aluguel de cadeira (por mês)" }]} />
+      </fieldset>
+      {pay === "commission" ? (
+        <fieldset className="min-w-0"><legend className={label}>Comissão sobre o serviço</legend>
+          <PresetNumber name="Comissão" presets={PERCENT_STEPS} value={commissionPct} onChange={setPct} min={0} max={100} format={(n) => `${n}%`} />
+        </fieldset>
+      ) : (
+        <fieldset className="min-w-0"><legend className={label}>Aluguel por mês</legend>
+          <PresetNumber name="Aluguel" presets={rentSteps} value={chairRent} onChange={setRent} min={0} max={1_000_000} step={moneyStep(rentSteps)} format={money} />
+        </fieldset>
+      )}
+      <fieldset className="min-w-0"><legend className={label}>Meta de faturamento no mês</legend>
+        <PresetNumber name="Meta do mês" presets={goalSteps} value={monthlyGoal} onChange={setGoal} min={0} max={100_000_000}
+          step={moneyStep(goalSteps)} format={money} allowNone noneLabel="Sem meta" />
+      </fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Posição na agenda</legend>
+        <div className="flex flex-wrap items-center gap-3">
+          <Stepper name="Ordem na agenda" value={sort} onChange={setSort} min={0} max={999} format={(n) => `${n + 1}º`} />
+          <span className="text-xs text-neutral-500">O 1º aparece primeiro.</span>
         </div>
-      </div>
-      <div className="text-sm">
-        <p>Como ele recebe</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" className={`chip ${f.pay === "commission" ? "chip-on" : ""}`} onClick={() => setF({ ...f, pay: "commission" })}>Comissão (%)</button>
-          <button type="button" className={`chip ${f.pay === "chair_rent" ? "chip-on" : ""}`} onClick={() => setF({ ...f, pay: "chair_rent" })}>Aluguel de cadeira (por mês)</button>
-        </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {f.pay === "commission" ? (
-          <label className="text-sm">Comissão sobre o serviço (%)
-            <input className="input mt-1" inputMode="decimal" value={f.commissionPct} onChange={set("commissionPct")} />
-          </label>
-        ) : (
-          <label className="text-sm">Aluguel por mês ({currency})
-            <input className="input mt-1" inputMode="decimal" value={f.chairRent} onChange={set("chairRent")} />
-          </label>
-        )}
-        <label className="text-sm">Meta de faturamento no mês ({currency})
-          <input className="input mt-1" inputMode="decimal" value={f.monthlyGoal} onChange={set("monthlyGoal")} placeholder="Opcional" />
-        </label>
-        <label className="text-sm">Ordem na agenda
-          <input className="input mt-1" inputMode="numeric" value={f.sort} onChange={set("sort")} />
-          <span className="text-xs text-neutral-500">Menor aparece primeiro.</span>
-        </label>
-      </div>
-      {f.pay === "commission" && <p className="text-xs text-neutral-500">Regras de plano, produtos, bônus e metas por degrau ficam em Comissões. Serviços podem ter % própria em Serviços.</p>}
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <div className="flex gap-2">
+      </fieldset>
+      {pay === "commission" && <p className="text-xs text-neutral-500">Regras de plano, produtos, bônus e metas por degrau ficam em Comissões. Serviços podem ter % própria em Serviços.</p>}
+      {(localError || error) && <p className="text-sm text-red-600 dark:text-red-400">{localError || error}</p>}
+      <div className="flex flex-wrap gap-2">
         <button className="btn" disabled={pending}>{pending ? "Salvando…" : "Salvar"}</button>
         <button type="button" className="chip" onClick={onCancel}>Cancelar</button>
       </div>

@@ -5,10 +5,25 @@ import { useRouter } from "next/navigation";
 import { toHHMM } from "@/core/types";
 import { formatMoney } from "@/core/money";
 import type { ShopSettings } from "@/modules/settings/data";
-import { CURRENCIES, FEATURES, GROUPS, WEEKDAYS, type FeatureDef, type FeatureState } from "@/modules/settings/features";
+import { CURRENCIES, FEATURES, GROUPS, WEEKDAYS, type FeatureDef, type FeatureState, type FieldDef } from "@/modules/settings/features";
+import { Choice, MultiChoice, PresetNumber, SelectList, Stepper } from "@/components/pick";
+import { DAY_STEPS, moneyStep, PERCENT_STEPS, priceSteps, timeSteps } from "@/core/presets";
 import { saveFeatureAction, saveHoursAction, savePlanRulesAction, saveShopInfoAction, saveWalkInAction } from "./actions";
 
 type Result = { ok: boolean; error?: string };
+
+/** Degraus prontos para um campo numérico de recurso, dentro do mínimo e do máximo dele. */
+function numberPresets(f: Extract<FieldDef, { type: "number" }>, currency: string) {
+  const pool = f.prefix === "money" ? priceSteps(currency, "service").slice(0, 10)
+    : f.suffix?.startsWith("%") ? PERCENT_STEPS
+    : f.suffix === "dias" ? DAY_STEPS
+    : [1, 2, 3, 4, 5, 6, 8, 10];
+  return pool.filter((n) => n >= f.min && n <= f.max);
+}
+
+/** Horários para escolher, incluindo o atual se ele estiver fora dos degraus. */
+const timeOptions = (current: string) =>
+  [...new Set([...timeSteps(5 * 60, 23 * 60 + 30, 30), current])].sort().map((t) => ({ value: t, label: t }));
 
 function useSaver() {
   const [pending, start] = useTransition();
@@ -102,24 +117,23 @@ function FeatureCard({ slug, def, state, canEdit, currency, lang }: {
       </div>
       {state.enabled && def.fields.length > 0 && (
         <div className="space-y-2 border-t border-neutral-100 pt-3 text-sm dark:border-neutral-800">
-          {def.fields.map((f) => (
-            <div key={f.key} className="flex flex-wrap items-center justify-between gap-2">
-              <span>{f.label}</span>
-              {f.type === "bool" ? (
-                <Switch on={Boolean(cfg[f.key])} label={f.label} disabled={!canEdit} onChange={(v) => setCfg({ ...cfg, [f.key]: v })} />
-              ) : f.type === "select" ? (
-                <select className="input w-[6.5rem] min-w-0 py-1.5" disabled={!canEdit} value={String(cfg[f.key])} onChange={(e) => setCfg({ ...cfg, [f.key]: e.target.value })}>
-                  {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  {f.prefix === "money" && <span className="text-neutral-500">{formatMoney(0, currency, lang).replace(/[\d\s.,]/g, "")}</span>}
-                  <input className="input w-20 py-1.5 text-right" type="number" min={f.min} max={f.max} disabled={!canEdit}
-                    value={String(cfg[f.key] ?? "")} onChange={(e) => setCfg({ ...cfg, [f.key]: e.target.value === "" ? "" : Number(e.target.value) })} />
-                  {f.suffix && <span className="text-neutral-500">{f.suffix}</span>}
-                </span>
-              )}
+          {def.fields.map((f) => f.type === "bool" ? (
+            <div key={f.key} className="flex items-center justify-between gap-2">
+              <span className="min-w-0">{f.label}</span>
+              <Switch on={Boolean(cfg[f.key])} label={f.label} disabled={!canEdit} onChange={(v) => setCfg({ ...cfg, [f.key]: v })} />
             </div>
+          ) : (
+            <fieldset key={f.key} className="min-w-0" disabled={!canEdit}>
+              <legend className="mb-1.5">{f.label}</legend>
+              {f.type === "select" ? (
+                <Choice size="sm" name={f.label} value={String(cfg[f.key])} onChange={(v) => setCfg({ ...cfg, [f.key]: v })} options={f.options} />
+              ) : (() => {
+                const steps = numberPresets(f, currency);
+                const fmt = (n: number) => f.prefix === "money" ? formatMoney(n, currency, lang) : `${n}${f.suffix ? (f.suffix.startsWith("%") ? f.suffix : ` ${f.suffix}`) : ""}`;
+                return <PresetNumber name={f.label} presets={steps} value={Number(cfg[f.key] ?? f.min)} min={f.min} max={f.max}
+                  step={f.prefix === "money" ? moneyStep(steps) : 1} format={fmt} onChange={(v) => setCfg({ ...cfg, [f.key]: v ?? f.min })} />;
+              })()}
+            </fieldset>
           ))}
           {def.note && <p className="text-xs text-neutral-500">{def.note}</p>}
           {canEdit && (
@@ -153,33 +167,34 @@ function HoursSection({ slug, hours, step, canEdit }: { slug: string; hours: Rec
     }}>
       <h3 className="font-semibold">Horário de funcionamento</h3>
       <p className="mb-3 text-sm text-neutral-500">O app só oferece horários dentro destes intervalos. Desmarque o dia em que a barbearia fecha.</p>
-      <div className="space-y-2">
+      <fieldset className="min-w-0 space-y-2" disabled={!canEdit}>
         {order.map((i) => {
           const r = rows[i];
           const upd = (p: Partial<typeof r>) => setRows(rows.map((x, j) => (j === i ? { ...x, ...p } : x)));
           return (
-            <div key={i} className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-2 text-sm sm:grid-cols-[130px_minmax(0,1fr)]">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" className="h-4 w-4 accent-amber-500" disabled={!canEdit} checked={r.open} onChange={(e) => upd({ open: e.target.checked })} />
+            <div key={i} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+              <span className="flex w-32 items-center gap-2">
+                <Switch on={r.open} label={`Abre ${WEEKDAYS[i]}`} disabled={!canEdit} onChange={(v) => upd({ open: v })} />
                 {WEEKDAYS[i]}
-              </label>
+              </span>
               {r.open ? (
-                <span className="flex items-center gap-2">
-                  <input type="time" className="input w-[6.5rem] min-w-0 py-1.5" disabled={!canEdit} value={r.from} onChange={(e) => upd({ from: e.target.value })} aria-label={`Abre ${WEEKDAYS[i]}`} />
+                <span className="flex min-w-0 items-center gap-2">
+                  <SelectList className="w-[5.75rem] min-w-0 py-1.5" name={`Abre ${WEEKDAYS[i]}`} options={timeOptions(r.from)} value={r.from} onChange={(v) => upd({ from: v })} />
                   <span className="text-neutral-500">às</span>
-                  <input type="time" className="input w-[6.5rem] min-w-0 py-1.5" disabled={!canEdit} value={r.to} onChange={(e) => upd({ to: e.target.value })} aria-label={`Fecha ${WEEKDAYS[i]}`} />
+                  <SelectList className="w-[5.75rem] min-w-0 py-1.5" name={`Fecha ${WEEKDAYS[i]}`} options={timeOptions(r.to)} value={r.to} onChange={(v) => upd({ to: v })} />
                 </span>
               ) : <span className="text-neutral-500">Fechado</span>}
             </div>
           );
         })}
-      </div>
-      <label className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-3 text-sm dark:border-neutral-800">
-        <span>Intervalo entre horários na agenda<br /><span className="text-xs text-neutral-500">Ex.: de 15 em 15 minutos (9:00, 9:15, 9:30…)</span></span>
-        <select className="input w-[6.5rem] min-w-0 py-1.5" disabled={!canEdit} value={slot} onChange={(e) => setSlot(Number(e.target.value))}>
-          {[5, 10, 15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutos</option>)}
-        </select>
-      </label>
+      </fieldset>
+      <fieldset className="mt-4 min-w-0 border-t border-neutral-100 pt-3 text-sm dark:border-neutral-800" disabled={!canEdit}>
+        <legend className="sr-only">Intervalo entre horários na agenda</legend>
+        <p>Intervalo entre horários na agenda</p>
+        <p className="mb-2 text-xs text-neutral-500">Ex.: de 15 em 15 minutos (9:00, 9:15, 9:30…)</p>
+        <Choice size="sm" name="Intervalo entre horários" value={slot} onChange={setSlot}
+          options={[5, 10, 15, 20, 30, 45, 60].map((m) => ({ value: m, label: `${m} min` }))} />
+      </fieldset>
       {canEdit && <div className="mt-4 flex items-center gap-3"><button className="btn" disabled={pending}>Salvar horários</button><Msg msg={msg} /></div>}
     </form>
   );
@@ -187,7 +202,6 @@ function HoursSection({ slug, hours, step, canEdit }: { slug: string; hours: Rec
 
 function WalkInSection({ slug, policy, canEdit }: { slug: string; policy: ShopSettings["walkIn"]; canEdit: boolean }) {
   const [p, setP] = useState({ enabled: policy.enabled, perPeakHour: policy.perPeakHour, blockMin: policy.blockMin, peaks: policy.peakStarts.map(toHHMM) });
-  const [add, setAdd] = useState("12:00");
   const { pending, msg, save } = useSaver();
   return (
     <form className="card" onSubmit={(e) => {
@@ -203,37 +217,21 @@ function WalkInSection({ slug, policy, canEdit }: { slug: string; policy: ShopSe
       </div>
       {p.enabled && (
         <div className="mt-3 space-y-3 text-sm">
-          <label className="flex flex-wrap items-center justify-between gap-2">
-            Barbeiros reservados em cada hora de pico
-            <input className="input w-20 py-1.5 text-right" type="number" min={0} max={10} disabled={!canEdit} value={p.perPeakHour}
-              onChange={(e) => setP({ ...p, perPeakHour: Number(e.target.value) })} />
-          </label>
-          <label className="flex flex-wrap items-center justify-between gap-2">
-            Duração do bloco reservado
-            <span className="flex items-center gap-1.5">
-              <input className="input w-20 py-1.5 text-right" type="number" min={10} max={240} step={5} disabled={!canEdit} value={p.blockMin}
-                onChange={(e) => setP({ ...p, blockMin: Number(e.target.value) })} />
-              <span className="text-neutral-500">min</span>
-            </span>
-          </label>
-          <div>
-            <p>Horários de pico</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {p.peaks.length === 0 && <span className="text-neutral-500">Nenhum horário de pico.</span>}
-              {p.peaks.map((t) => (
-                <span key={t} className="chip flex items-center gap-1.5 py-1">
-                  {t}
-                  {canEdit && <button type="button" aria-label={`Tirar ${t}`} className="text-neutral-500 hover:text-red-600" onClick={() => setP({ ...p, peaks: p.peaks.filter((x) => x !== t) })}>×</button>}
-                </span>
-              ))}
-              {canEdit && (
-                <span className="flex items-center gap-1.5">
-                  <input type="time" className="input w-auto py-1" value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Novo horário de pico" />
-                  <button type="button" className="chip py-1" onClick={() => add && !p.peaks.includes(add) && setP({ ...p, peaks: [...p.peaks, add].sort() })}>Adicionar</button>
-                </span>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0">Barbeiros reservados em cada hora de pico</span>
+            {canEdit ? <Stepper name="Barbeiros reservados" value={p.perPeakHour} onChange={(v) => setP({ ...p, perPeakHour: v })} min={0} max={10} />
+              : <b>{p.perPeakHour}</b>}
           </div>
+          <fieldset className="min-w-0" disabled={!canEdit}>
+            <legend className="mb-1.5">Duração do bloco reservado</legend>
+            <PresetNumber name="Duração do bloco" presets={[10, 15, 20, 30, 45, 60, 90, 120]} value={p.blockMin} min={10} max={240} step={5}
+              format={(n) => `${n} min`} onChange={(v) => setP({ ...p, blockMin: v ?? 30 })} />
+          </fieldset>
+          <fieldset className="min-w-0" disabled={!canEdit}>
+            <legend className="mb-1.5">Horários de pico <span className="text-xs text-neutral-500">(toque para marcar)</span></legend>
+            <MultiChoice name="Horários de pico" value={p.peaks} onChange={(v) => setP({ ...p, peaks: [...v].sort() })}
+              options={[...new Set([...timeSteps(7 * 60, 22 * 60, 60), ...p.peaks])].sort().map((t) => ({ value: t, label: t }))} />
+          </fieldset>
         </div>
       )}
       {canEdit && <div className="mt-4 flex items-center gap-3"><button className="btn" disabled={pending}>Salvar encaixes</button><Msg msg={msg} /></div>}
@@ -249,15 +247,12 @@ function PlanSection({ slug, days, block, canEdit }: { slug: string; days: numbe
     <form className="card" onSubmit={(e) => { e.preventDefault(); save(() => savePlanRulesAction(slug, { planAlertDays: d, blockExpiredPlans: b })); }}>
       <h3 className="font-semibold">Planos de assinatura</h3>
       <div className="mt-3 space-y-3 text-sm">
-        <label className="flex flex-wrap items-center justify-between gap-2">
-          Avisar quantos dias antes de vencer
-          <span className="flex items-center gap-1.5">
-            <input className="input w-20 py-1.5 text-right" type="number" min={0} max={60} disabled={!canEdit} value={d} onChange={(e) => setD(Number(e.target.value))} />
-            <span className="text-neutral-500">dias</span>
-          </span>
-        </label>
+        <fieldset className="min-w-0" disabled={!canEdit}>
+          <legend className="mb-1.5">Avisar quantos dias antes de vencer</legend>
+          <PresetNumber name="Dias de aviso" presets={DAY_STEPS} value={d} min={0} max={60} format={(n) => `${n} dia${n === 1 ? "" : "s"}`} onChange={(v) => setD(v ?? 0)} />
+        </fieldset>
         <div className="flex items-center justify-between gap-3">
-          <span>Bloquear atendimentos do plano quando ele vencer<br /><span className="text-xs text-neutral-500">O cliente volta a usar assim que pagar.</span></span>
+          <span className="min-w-0">Bloquear atendimentos do plano quando ele vencer<br /><span className="text-xs text-neutral-500">O cliente volta a usar assim que pagar.</span></span>
           <Switch on={b} label="Bloquear plano vencido" disabled={!canEdit} onChange={setB} />
         </div>
       </div>
@@ -284,26 +279,24 @@ function ShopSection({ slug, shop, canEdit, zones }: { slug: string; shop: ShopS
         <label className="text-sm">Endereço
           <input className="input mt-1" maxLength={200} disabled={!canEdit} value={f.address} onChange={set("address")} placeholder="Rua, número · bairro · cidade" />
         </label>
-        <label className="text-sm">Idioma padrão
-          <select className="input mt-1" disabled={!canEdit} value={f.defaultLang} onChange={set("defaultLang")}>
-            <option value="pt">Português</option>
-            <option value="en">English</option>
-            <option value="es">Español</option>
-          </select>
-          <span className="text-xs text-neutral-500">O cliente ainda pode trocar o idioma no app.</span>
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm">Moeda
-            <input className="input mt-1 uppercase" list="navalha-currencies" maxLength={3} disabled={!canEdit} value={f.currency} onChange={set("currency")} />
-            <datalist id="navalha-currencies">{CURRENCIES.map((c) => <option key={c} value={c} />)}</datalist>
+        <fieldset className="min-w-0 text-sm" disabled={!canEdit}>
+          <legend className="mb-1.5">Idioma padrão</legend>
+          <Choice name="Idioma padrão" value={f.defaultLang} onChange={(v) => setF({ ...f, defaultLang: v })}
+            options={[{ value: "pt", label: "Português" }, { value: "en", label: "English" }, { value: "es", label: "Español" }]} />
+          <span className="mt-1 block text-xs text-neutral-500">O cliente ainda pode trocar o idioma no app.</span>
+        </fieldset>
+        <fieldset className="grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2" disabled={!canEdit}>
+          <label className="min-w-0 text-sm">Moeda
+            <SelectList className="mt-1 w-full min-w-0" name="Moeda" value={f.currency} onChange={(v) => setF({ ...f, currency: v })}
+              options={[...new Set([...CURRENCIES, f.currency])].map((c) => ({ value: c, label: c }))} />
             <span className="text-xs text-neutral-500">Ex.: {preview}</span>
           </label>
-          <label className="text-sm">Fuso horário
-            <input className="input mt-1" list="navalha-zones" disabled={!canEdit} value={f.timezone} onChange={set("timezone")} />
-            <datalist id="navalha-zones">{zones.map((z) => <option key={z} value={z} />)}</datalist>
+          <label className="min-w-0 text-sm">Fuso horário
+            <SelectList className="mt-1 w-full min-w-0" name="Fuso horário" value={f.timezone} onChange={(v) => setF({ ...f, timezone: v })}
+              options={[...new Set([f.timezone, ...zones])].map((z) => ({ value: z, label: z.replace(/_/g, " ") }))} />
             <span className="text-xs text-neutral-500">Agora lá: {clock}</span>
           </label>
-        </div>
+        </fieldset>
       </div>
       {canEdit && <div className="mt-4 flex items-center gap-3"><button className="btn" disabled={pending}>Salvar dados</button><Msg msg={msg} /></div>}
     </form>

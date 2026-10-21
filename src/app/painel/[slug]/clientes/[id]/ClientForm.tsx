@@ -4,6 +4,9 @@ import { useState, useTransition } from "react";
 import type { BarberInfo } from "@/data/types";
 import { saveClient } from "../actions";
 import { fmtPhone } from "@/modules/clients/ui";
+import { Choice, Toggle } from "@/components/pick";
+import { CLIENT_NOTE_PRESETS, CLIENT_PREF_PRESETS } from "@/core/presets";
+import NoteChips from "./NoteChips";
 
 export default function ClientForm({ slug, barbers, client }: {
   slug: string; barbers: BarberInfo[];
@@ -39,31 +42,28 @@ export default function ClientForm({ slug, barbers, client }: {
           <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" required />
         </label>
       </div>
-      <label className="block text-sm"><span className={label}>Barbeiro preferido</span>
-        <select className="input" value={barberId} onChange={(e) => setBarberId(e.target.value)}>
-          <option value="">Sem preferência</option>
-          {barbers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
-      </label>
-      <label className="block text-sm"><span className={label}>Preferências de corte</span>
-        <textarea className="input min-h-20" value={preferences} onChange={(e) => setPreferences(e.target.value)}
-          placeholder="Ex.: degradê navalhado, máquina 1 nas laterais, não gosta de risco" maxLength={2000} />
-      </label>
-      <label className="block text-sm"><span className={label}>Observações da equipe</span>
-        <textarea className="input min-h-20" value={notes} onChange={(e) => setNotes(e.target.value)}
-          placeholder="Ex.: prefere horário depois das 18h, alergia a pomada X" maxLength={2000} />
-      </label>
-      <label className="flex items-start gap-3 rounded-xl border border-neutral-200 p-3 text-sm dark:border-neutral-700">
-        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-amber-500" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-        <span>
-          <b>Autoriza fotos do corte</b>
-          <span className="block text-xs text-neutral-500">
-            Pela LGPD, só tire ou guarde fotos do cliente com a autorização dele.
-            {client.photoConsentAt && consent ? ` Autorizado em ${client.photoConsentAt}.` : ""}
-            {client.photoConsentAt && !consent ? " Ao salvar, a autorização será retirada." : ""}
-          </span>
+      <div className="text-sm"><span className={label}>Barbeiro preferido</span>
+        <Choice name="Barbeiro preferido" value={barberId} onChange={setBarberId}
+          options={[{ value: "", label: "Sem preferência" }, ...barbers.map((b) => ({
+            value: b.id, label: <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: b.color ?? "#a3a3a3" }} />{b.name}</span>,
+          }))]} />
+      </div>
+      <div className="text-sm"><span className={label}>Preferências de corte <span className="font-normal">(toque em quantas quiser)</span></span>
+        <NoteChips name="Preferências de corte" presets={CLIENT_PREF_PRESETS} value={preferences} onChange={setPreferences}
+          otherPlaceholder="Ex.: máquina 0,5 na nuca" />
+      </div>
+      <div className="text-sm"><span className={label}>Observações da equipe</span>
+        <NoteChips name="Observações da equipe" presets={CLIENT_NOTE_PRESETS} value={notes} onChange={setNotes}
+          otherPlaceholder="Ex.: alergia a pomada X" />
+      </div>
+      <div className="rounded-xl border border-neutral-200 p-3 text-sm dark:border-neutral-700">
+        <Toggle on={consent} onChange={setConsent} label={<b>Autoriza fotos do corte</b>} />
+        <span className="mt-1 block text-xs text-neutral-500">
+          Pela LGPD, só tire ou guarde fotos do cliente com a autorização dele.
+          {client.photoConsentAt && consent ? ` Autorizado em ${client.photoConsentAt}.` : ""}
+          {client.photoConsentAt && !consent ? " Ao salvar, a autorização será retirada." : ""}
         </span>
-      </label>
+      </div>
       <div className="flex items-center gap-3">
         <button className="btn" disabled={pending}>{pending ? "Salvando…" : "Salvar"}</button>
         {msg && <span className={`text-sm ${msg.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{msg.text}</span>}

@@ -3,17 +3,48 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toHHMM } from "@/core/types";
+import { addDays } from "@/core/time";
+import { SelectList } from "@/components/pick";
 import type { BarberView, ServiceView } from "@/modules/agenda/view";
 import { errorText } from "@/modules/agenda/view";
 import type { ClientLite } from "@/modules/agenda/data";
 import type { FreeTime } from "@/modules/agenda/plan";
-import { createAppt, findClients, loadFreeTimes } from "./actions";
+import { createAppt, findClients, loadFreeTimes, recentClients } from "./actions";
+import { addClient } from "../clientes/actions";
 import Sheet, { Label } from "./Sheet";
 
 export interface NewPreset {
   day: string;
   barberId?: string;
   minutes?: number;
+}
+
+const dayLabel = (d: string, opts: Intl.DateTimeFormatOptions) =>
+  new Date(d + "T12:00:00Z").toLocaleDateString("pt-BR", { ...opts, timeZone: "UTC" }).replace(".", "");
+
+/** Dia em botões: Hoje, Amanhã e os próximos dias; "Outro dia…" abre uma lista dos próximos 3 meses. */
+export function DayPicker({ today, value, onChange }: { today: string; value: string; onChange: (d: string) => void }) {
+  const quick = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+  const [more, setMore] = useState(!quick.includes(value));
+  const next = Array.from({ length: 90 }, (_, i) => addDays(today, i));
+  const all = next.includes(value) ? next : [value, ...next];
+  return (
+    <div className="space-y-2">
+      <div role="radiogroup" aria-label="Dia" className="flex flex-wrap gap-1.5">
+        {quick.map((d, i) => (
+          <button key={d} type="button" role="radio" aria-checked={!more && value === d} onClick={() => { setMore(false); onChange(d); }}
+            className={`chip px-3 py-1.5 capitalize ${!more && value === d ? "chip-on" : ""}`}>
+            {i === 0 ? "Hoje" : i === 1 ? "Amanhã" : dayLabel(d, { weekday: "short", day: "numeric" })}
+          </button>
+        ))}
+        <button type="button" className={`chip px-3 py-1.5 ${more ? "chip-on" : ""}`} onClick={() => setMore(true)}>Outro dia…</button>
+      </div>
+      {more && (
+        <SelectList name="Escolha o dia" value={value} onChange={onChange}
+          options={all.map((d) => ({ value: d, label: dayLabel(d, { weekday: "long", day: "numeric", month: "long" }) }))} />
+      )}
+    </div>
+  );
 }
 
 /** Horários livres de um barbeiro para um serviço. Os que caem em bloco de encaixe aparecem marcados. */
@@ -54,11 +85,13 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
   slug: string; today: string; barbers: BarberView[]; services: ServiceView[]; preset: NewPreset; onClose: () => void;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"client" | "name">("client");
+  const [mode, setMode] = useState<"client" | "new">("client");
   const [q, setQ] = useState("");
   const [found, setFound] = useState<ClientLite[]>([]);
+  const [recent, setRecent] = useState<ClientLite[] | null>(null);
   const [client, setClient] = useState<ClientLite | null>(null);
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
   const [barberId, setBarberId] = useState(preset.barberId ?? barbers[0]?.id ?? "");
   const [day, setDay] = useState(preset.day < today ? today : preset.day);
@@ -67,21 +100,34 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
   const [pending, start] = useTransition();
 
   useEffect(() => {
+    let alive = true;
+    recentClients(slug).then((r) => alive && setRecent(r)).catch(() => alive && setRecent([]));
+    return () => { alive = false; };
+  }, [slug]);
+
+  useEffect(() => {
     if (mode !== "client" || q.trim().length < 2) { setFound([]); return; }
     const t = setTimeout(async () => setFound(await findClients(slug, q)), 250);
     return () => clearTimeout(t);
   }, [q, mode, slug]);
 
   const ready = Boolean(serviceId && barberId && minutes !== null && (mode === "client" ? client : name.trim()));
+  const searching = q.trim().length >= 2;
+  const list = searching ? found : recent ?? [];
 
   function save() {
     if (minutes === null) return;
     setError("");
     start(async () => {
+      let clientId = mode === "client" ? client?.id ?? null : null;
+      if (mode === "new" && phone.trim()) {
+        const c = await addClient(slug, { name: name.trim(), phone });
+        if (!c.ok) { setError(c.error); return; }
+        clientId = c.id ?? null;
+      }
       const r = await createAppt({
-        slug, day, minutes, serviceId, barberId,
-        clientId: mode === "client" ? client?.id ?? null : null,
-        walkInName: mode === "name" ? name.trim() : null,
+        slug, day, minutes, serviceId, barberId, clientId,
+        walkInName: clientId ? null : name.trim(),
       });
       if (r.ok) { router.refresh(); onClose(); } else setError(errorText(r.error));
     });
@@ -89,37 +135,37 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
 
   return (
     <Sheet title="Novo agendamento" onClose={onClose}>
-      <div className="flex gap-2">
-        <button className={`chip flex-1 ${mode === "client" ? "chip-on" : ""}`} onClick={() => setMode("client")}>Cliente cadastrado</button>
-        <button className={`chip flex-1 ${mode === "name" ? "chip-on" : ""}`} onClick={() => setMode("name")}>Só o nome</button>
-      </div>
+      <Label>Cliente</Label>
       {mode === "client" ? (
         client ? (
-          <div className="mt-3 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 text-sm dark:bg-amber-950/40">
-            <span><b>{client.name}</b> <span className="text-neutral-500">{client.phone}</span></span>
-            <button className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400" onClick={() => setClient(null)}>trocar</button>
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm dark:bg-amber-950/40">
+            <span className="min-w-0 truncate"><b>{client.name}</b> <span className="text-neutral-500">{client.phone}</span></span>
+            <button className="shrink-0 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400" onClick={() => setClient(null)}>trocar</button>
           </div>
         ) : (
-          <div className="mt-3">
-            <input className="input" autoFocus placeholder="Buscar por nome ou telefone" value={q} onChange={(e) => setQ(e.target.value)} />
-            {found.length > 0 && (
-              <ul className="mt-1 divide-y divide-neutral-100 rounded-xl border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-700">
-                {found.map((c) => (
-                  <li key={c.id}>
-                    <button className="flex w-full justify-between px-3 py-2 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800" onClick={() => setClient(c)}>
-                      <span>{c.name}</span><span className="text-neutral-500">{c.phone}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {q.trim().length >= 2 && found.length === 0 && (
-              <p className="mt-1 text-xs text-neutral-500">Ninguém encontrado. <button className="font-medium underline" onClick={() => { setMode("name"); setName(q); }}>Marcar só com o nome</button></p>
-            )}
+          <div>
+            <input type="search" className="input" placeholder="Buscar por nome ou telefone" aria-label="Buscar cliente" value={q} onChange={(e) => setQ(e.target.value)} />
+            <p className="mt-2 text-xs text-neutral-500">{searching ? "Toque no cliente:" : "Vieram por último (toque para escolher):"}</p>
+            <div className="mt-1.5 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+              {!searching && recent === null && <span className="text-sm text-neutral-500">Carregando…</span>}
+              {list.map((c) => (
+                <button key={c.id} type="button" className="chip max-w-full truncate px-3 py-1.5" onClick={() => setClient(c)}>{c.name}</button>
+              ))}
+              <button type="button" className="chip px-3 py-1.5 font-medium" onClick={() => { setMode("new"); setName(searching && !/\d/.test(q) ? q.trim() : ""); }}>+ Novo cliente</button>
+            </div>
+            {searching && found.length === 0 && <p className="mt-1 text-xs text-neutral-500">Ninguém encontrado com “{q.trim()}”.</p>}
           </div>
         )
       ) : (
-        <input className="input mt-3" autoFocus placeholder="Nome do cliente" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="space-y-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Novo cliente</p>
+            <button type="button" className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400" onClick={() => setMode("client")}>voltar para a lista</button>
+          </div>
+          <input className="input" autoFocus placeholder="Nome do cliente" aria-label="Nome do cliente" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input" placeholder="WhatsApp (opcional)" aria-label="WhatsApp" inputMode="tel" maxLength={25} value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <p className="text-xs text-neutral-500">Com WhatsApp, o cliente já fica cadastrado. Sem, marca só com o nome.</p>
+        </div>
       )}
 
       <Label>Serviço</Label>
@@ -141,7 +187,7 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
       </div>
 
       <Label>Dia</Label>
-      <input type="date" className="input" min={today} value={day} onChange={(e) => e.target.value && setDay(e.target.value)} />
+      <DayPicker today={today} value={day} onChange={setDay} />
 
       <Label>Horário</Label>
       {serviceId && barberId && <TimePicker slug={slug} day={day} serviceId={serviceId} barberId={barberId} value={minutes} onChange={setMinutes} />}

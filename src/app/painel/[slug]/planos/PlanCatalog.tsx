@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
+import { MultiChoice, PresetNumber, PresetText } from "@/components/pick";
+import { moneyStep, PERIOD_PRESETS, PLAN_NAME_PRESETS, priceSteps, QUOTA_PRESETS } from "@/core/presets";
 import type { Lang } from "@/core/types";
 import { formatMoney } from "@/core/money";
 import type { PlanItem } from "@/modules/plans/data";
@@ -39,7 +42,7 @@ export default function PlanCatalog({ slug, canManage, currency, lang, services,
               <h3 className="text-lg font-semibold leading-tight">{p.name}</h3>
               {!p.active && <Badge tone="neutral">Desativado</Badge>}
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums">{money(p.price)}<span className="text-sm font-normal text-neutral-500"> a cada {p.periodDays} dias</span></p>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{money(p.price)}<span className="text-sm font-normal text-neutral-500"> · {PERIOD_PRESETS.find((x) => x.value === p.periodDays)?.label.toLowerCase() ?? `a cada ${p.periodDays} dias`}</span></p>
             <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">{p.quotaUses ? `${p.quotaUses} uso${p.quotaUses > 1 ? "s" : ""} por ciclo` : "Usos ilimitados"}</p>
             <p className="mt-2 text-xs text-neutral-500">
               Cobre: {p.serviceIds.length ? p.serviceIds.map(svcName).filter(Boolean).join(", ") : <span className="text-red-600 dark:text-red-400">nenhum serviço (escolha ao editar)</span>}
@@ -68,63 +71,64 @@ function PlanForm({ slug, services, currency, lang, plan, onClose }: {
   slug: string; services: Svc[]; currency: string; lang: Lang; plan?: Item; onClose: () => void;
 }) {
   const [name, setName] = useState(plan?.name ?? "");
-  const [price, setPrice] = useState(plan ? String(plan.price) : "");
-  const [period, setPeriod] = useState(String(plan?.periodDays ?? 30));
-  const [quota, setQuota] = useState(plan?.quotaUses ? String(plan.quotaUses) : "");
+  const [price, setPrice] = useState<number | null>(plan ? plan.price : null);
+  const [period, setPeriod] = useState<number | null>(plan?.periodDays ?? 30);
+  const [quota, setQuota] = useState<number | null>(plan?.quotaUses ?? null);
   const [covered, setCovered] = useState<string[]>(plan?.serviceIds ?? []);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
-  const num = (s: string) => Number(s.replace(",", "."));
+  const money = (n: number) => formatMoney(n, currency, lang);
+  const steps = priceSteps(currency, "plan");
+  const periodLabel = (n: number) => PERIOD_PRESETS.find((p) => p.value === n)?.label ?? `${n} dias`;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!name.trim()) return setError("Escolha um nome para o plano.");
+    if (price == null) return setError("Escolha o preço do plano.");
     start(async () => {
       const r = await savePlanAction(slug, {
-        id: plan?.id, name, price: num(price), periodDays: num(period), quotaUses: quota.trim() ? num(quota) : null, serviceIds: covered,
+        id: plan?.id, name, price, periodDays: period ?? 30, quotaUses: quota, serviceIds: covered,
       });
       if (r.ok) onClose(); else setError(r.error);
     });
   }
-  const label = "mb-1 block text-xs font-medium text-neutral-500";
+  const label = "mb-2 block text-xs font-medium text-neutral-500";
+  const cheapest = covered.length ? Math.min(...covered.map((id) => services.find((s) => s.id === id)?.price ?? 0)) : 0;
   return (
-    <form onSubmit={submit} className="card mb-3 space-y-3 ring-1 ring-amber-500">
+    <form onSubmit={submit} className="card mb-3 min-w-0 space-y-4 ring-1 ring-amber-500">
       <h3 className="font-semibold">{plan ? `Editar ${plan.name}` : "Novo plano"}</h3>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="text-sm sm:col-span-2 lg:col-span-1"><span className={label}>Nome</span>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Clube do Corte" required />
-        </label>
-        <label className="text-sm"><span className={label}>Preço ({currency})</span>
-          <input className="input" value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" placeholder="89,90" required />
-        </label>
-        <label className="text-sm"><span className={label}>Ciclo (dias)</span>
-          <input className="input" value={period} onChange={(e) => setPeriod(e.target.value)} inputMode="numeric" required />
-        </label>
-        <label className="text-sm"><span className={label}>Usos por ciclo</span>
-          <input className="input" value={quota} onChange={(e) => setQuota(e.target.value)} inputMode="numeric" placeholder="vazio = ilimitado" />
-        </label>
-      </div>
-      <fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Nome</legend>
+        <PresetText name="Nome do plano" presets={PLAN_NAME_PRESETS} value={name} onChange={setName} otherPlaceholder="Nome do plano" />
+      </fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Preço</legend>
+        <PresetNumber name="Preço do plano" presets={steps} value={price} onChange={setPrice} format={money} min={0} max={100000} step={moneyStep(steps)} />
+      </fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Cobrança a cada</legend>
+        <PresetNumber name="Ciclo" presets={PERIOD_PRESETS.map((p) => p.value)} value={period} onChange={setPeriod} format={periodLabel} min={1} max={366} />
+      </fieldset>
+      <fieldset className="min-w-0"><legend className={label}>Usos por ciclo</legend>
+        <PresetNumber name="Usos por ciclo" presets={QUOTA_PRESETS} value={quota} onChange={setQuota} min={1} max={999}
+          format={(n) => `${n} uso${n > 1 ? "s" : ""}`} allowNone noneLabel="Ilimitado" />
+      </fieldset>
+      <fieldset className="min-w-0">
         <legend className={label}>Serviços que o plano cobre</legend>
-        <div className="flex flex-wrap gap-2">
-          {services.map((s) => {
-            const on = covered.includes(s.id);
-            return (
-              <button type="button" key={s.id} aria-pressed={on} className={`chip ${on ? "chip-on" : ""}`}
-                onClick={() => setCovered((c) => (on ? c.filter((x) => x !== s.id) : [...c, s.id]))}>
-                {on ? "✓ " : ""}{s.name} <span className="text-xs text-neutral-500">{formatMoney(s.price, currency, lang)}</span>
-              </button>
-            );
-          })}
-        </div>
-        {covered.length > 0 && quota.trim() && num(quota) > 0 && num(price) > 0 && (
+        {services.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            Você ainda não tem serviços. <Link className="font-medium text-amber-700 underline dark:text-amber-400" href={`/painel/${slug}/servicos`}>Cadastre na aba Serviços</Link> e volte aqui para escolher o que o plano cobre.
+          </p>
+        ) : (
+          <MultiChoice name="Serviços cobertos" value={covered} onChange={setCovered}
+            options={services.map((s) => ({ value: s.id, label: s.name, hint: money(s.price) }))} />
+        )}
+        {covered.length > 0 && quota != null && price != null && price > 0 && (
           <p className="mt-2 text-xs text-neutral-500">
-            Para comparar: {num(quota)} uso(s) avulsos custariam a partir de {formatMoney(num(quota) * Math.min(...covered.map((id) => services.find((s) => s.id === id)?.price ?? 0)), currency, lang)}.
+            Para comparar: {quota} uso(s) avulsos custariam a partir de {money(quota * cheapest)}.
           </p>
         )}
       </fieldset>
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button className="btn" disabled={pending}>{pending ? "Salvando…" : "Salvar plano"}</button>
         <button type="button" className="chip" onClick={onClose}>Cancelar</button>
       </div>

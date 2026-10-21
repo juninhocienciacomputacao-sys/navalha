@@ -12,7 +12,10 @@ const niceRound = (n: number) => {
 };
 
 /** Converte um valor pensado em BRL para a moeda da barbearia, arredondado para um número "bonito". */
-export const suggest = (brl: number, currency: string) => niceRound(brl * (CURRENCY_FACTOR[currency] ?? 1));
+export const suggest = (brl: number, currency: string) => {
+  const f = CURRENCY_FACTOR[currency] ?? 1;
+  return f === 1 ? brl : niceRound(brl * f);
+};
 
 /** Degraus de preço para escolher (serviços, planos, produtos). */
 export const priceSteps = (currency: string, kind: "service" | "plan" | "product" | "expense" = "service") => {
@@ -62,3 +65,16 @@ export const timeSteps = (from = 6 * 60, to = 23 * 60 + 30, step = 30) => {
   for (let m = from; m <= to; m += step) out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
   return out;
 };
+
+/** Passo dos botões − e + para valores em dinheiro, proporcional à moeda (1, 10, 100…). */
+export const moneyStep = (steps: number[]) => 10 ** Math.max(0, Math.floor(Math.log10(Math.max(1, steps[0] ?? 1))) - 1);
+
+// ---- clientes e agenda (escolhas rápidas para fichas e anotações) ----
+export const CLIENT_PREF_PRESETS = ["Degradê", "Navalhado", "Social", "Máquina 1 nas laterais", "Máquina 2 nas laterais", "Tesoura em cima", "Topete", "Risco", "Sem risco", "Pezinho quadrado", "Pezinho redondo", "Barba alinhada", "Barba desenhada", "Sobrancelha", "Sem pomada"];
+export const CLIENT_NOTE_PRESETS = ["Prefere de manhã", "Prefere depois das 18h", "Prefere sábado", "Alergia a produto", "Pele sensível", "Gosta de conversar", "Prefere silêncio", "Costuma atrasar", "Traz o filho", "Paga no Pix", "Cliente VIP"];
+export const APPT_NOTE_PRESETS = ["Chegou atrasado", "Pediu desconto", "Primeira vez", "Gostou muito", "Reclamou", "Quer voltar em 15 dias", "Comprou produto", "Indicado por amigo"];
+
+/** Especialidades comuns de barbeiro. */
+export const BARBER_ROLE_PRESETS = ["Corte clássico", "Degradê", "Barba e navalha", "Corte infantil", "Química e coloração", "Desenhos e freestyle", "Barbeiro sênior", "Aprendiz"];
+/** Metas de faturamento mensal por barbeiro (BRL; use suggest para outras moedas). */
+export const GOAL_PRESETS = [3000, 5000, 8000, 10000, 12000, 15000, 20000, 30000];

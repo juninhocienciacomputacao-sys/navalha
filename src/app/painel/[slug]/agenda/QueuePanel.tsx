@@ -4,7 +4,8 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toHHMM } from "@/core/types";
 import { errorText, type BarberView, type QueueView, type ServiceView } from "@/modules/agenda/view";
-import { queueAdd, queueCall, queueLeave } from "./actions";
+import type { ClientLite } from "@/modules/agenda/data";
+import { queueAdd, queueCall, queueLeave, recentClients } from "./actions";
 
 function useTick(ms: number) {
   const [now, setNow] = useState<number | null>(null);
@@ -18,13 +19,18 @@ function useTick(ms: number) {
 
 const VIA: Record<QueueView["via"], string> = { reception: "recepção", app: "pelo app", qr: "pelo QR" };
 
-export default function QueuePanel({ slug, queue, barbers, services, freeReserves, open }: {
+export default function QueuePanel({ slug, queue, barbers, services, freeReserves, open, todayClients = [] }: {
   slug: string; queue: QueueView[]; barbers: BarberView[]; services: ServiceView[]; freeReserves: number; open: boolean;
+  /** Clientes cadastrados com horário hoje (aparecem primeiro para tocar). */
+  todayClients?: ClientLite[];
 }) {
   const router = useRouter();
   const now = useTick(30_000);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [typing, setTyping] = useState(false);
+  const [recent, setRecent] = useState<ClientLite[] | null>(null);
   const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
@@ -33,10 +39,18 @@ export default function QueuePanel({ slug, queue, barbers, services, freeReserve
   function add() {
     if (!name.trim()) return;
     start(async () => {
-      const r = await queueAdd({ slug, name: name.trim(), serviceId: serviceId || null, clientId: null });
-      if (r.ok) { setName(""); setAdding(false); setMsg(null); router.refresh(); } else setMsg({ ok: false, text: errorText(r.error) });
+      const r = await queueAdd({ slug, name: name.trim(), serviceId: serviceId || null, clientId });
+      if (r.ok) { setName(""); setClientId(null); setTyping(false); setAdding(false); setMsg(null); router.refresh(); } else setMsg({ ok: false, text: errorText(r.error) });
     });
   }
+  function openAdd() {
+    setAdding((v) => !v);
+    if (recent === null) recentClients(slug).then(setRecent).catch(() => setRecent([]));
+  }
+  const waiting = new Set(queue.map((x) => x.name));
+  const seen = new Set<string>();
+  const picks = [...todayClients, ...(recent ?? [])].filter((c) => !waiting.has(c.name) && !seen.has(c.id) && seen.add(c.id)).slice(0, 16);
+
   function call(id: string) {
     start(async () => {
       const r = await queueCall(slug, id);
@@ -61,16 +75,40 @@ export default function QueuePanel({ slug, queue, barbers, services, freeReserve
             {open ? `${freeReserves} horário(s) guardado(s) para encaixe ainda livre(s) hoje.` : "Fechado hoje."} &quot;Chamar&quot; coloca a pessoa no primeiro horário livre de qualquer barbeiro.
           </p>
         </div>
-        <button className="chip" onClick={() => setAdding((v) => !v)}>+ Chegou cliente</button>
+        <button className="chip" onClick={openAdd}>+ Chegou cliente</button>
       </header>
 
       {adding && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-          <input className="input" autoFocus placeholder="Nome" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-          <select className="input sm:w-48" value={serviceId} onChange={(e) => setServiceId(e.target.value)} aria-label="Serviço">
-            {services.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.durationMin} min)</option>)}
-          </select>
-          <button className="btn" disabled={!name.trim() || pending} onClick={add}>Pôr na fila</button>
+        <div className="mt-3 space-y-3 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-neutral-500">Quem chegou? {todayClients.length ? "(primeiro, quem tem horário hoje)" : ""}</p>
+            <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
+              {recent === null && !todayClients.length && <span className="text-sm text-neutral-500">Carregando…</span>}
+              {picks.map((c) => (
+                <button key={c.id} type="button" className={`chip max-w-full truncate px-3 py-1.5 ${clientId === c.id ? "chip-on" : ""}`}
+                  onClick={() => { setClientId(c.id); setName(c.name); setTyping(false); }}>{c.name}</button>
+              ))}
+              <button type="button" className={`chip px-3 py-1.5 ${typing ? "chip-on" : ""}`}
+                onClick={() => { setTyping(true); setClientId(null); setName(""); }}>Outro nome…</button>
+            </div>
+            {typing && (
+              <input className="input mt-2" autoFocus placeholder="Nome" aria-label="Nome" maxLength={80} value={name}
+                onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+            )}
+          </div>
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-neutral-500">Serviço</p>
+            <div className="flex flex-wrap gap-1.5">
+              {services.map((s) => (
+                <button key={s.id} type="button" className={`chip px-3 py-1.5 ${serviceId === s.id ? "chip-on" : ""}`} onClick={() => setServiceId(s.id)}>
+                  {s.name} <span className="text-xs text-neutral-500">{s.durationMin} min</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn w-full sm:w-auto" disabled={!name.trim() || pending} onClick={add}>
+            {name.trim() ? `Pôr ${name.trim().split(" ")[0]} na fila` : "Pôr na fila"}
+          </button>
         </div>
       )}
 

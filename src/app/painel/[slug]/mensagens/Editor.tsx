@@ -4,13 +4,30 @@ import { useRef, useState, useTransition } from "react";
 import type { MessageTemplate, MessageTrigger } from "@/core/messages";
 import { renderTemplate } from "@/core/messages";
 import type { Lang } from "@/core/types";
-import { MESSAGE_VARS, TRIGGERS, whenLabel } from "@/modules/messages/defaults";
+import { DEFAULT_TEMPLATES, MESSAGE_VARS, TRIGGERS, whenLabel } from "@/modules/messages/defaults";
+import { Choice, PresetNumber, PresetText, Toggle } from "@/components/pick";
+import { DAY_STEPS, HOUR_STEPS } from "@/core/presets";
+import { ABSENT_STEPS, NAME_PRESETS, OFFSET_DEFAULT, VARIANTS } from "./variants";
 import { waLink } from "@/modules/messages/vars";
 import { deleteTemplateAction, restoreDefaultsAction, saveTemplateAction, toggleTemplateAction } from "./actions";
 
 type Draft = Omit<MessageTemplate, "id"> & { id?: string };
 const LANG_LABEL: Record<Lang, string> = { pt: "Português", en: "Inglês", es: "Espanhol" };
-const blank = (): Draft => ({ name: "Nova mensagem", trigger: "campaign", offset: 0, enabled: true, body: { pt: "Olá, {nome}! " } });
+const blank = (): Draft => ({ name: NAME_PRESETS.campaign[0], trigger: "campaign", offset: 0, enabled: true, body: { pt: VARIANTS.campaign[0].body.pt } });
+
+/** Degraus de tempo para cada gatilho. */
+const offsetSteps = (t: MessageTrigger): number[] =>
+  t === "before_appointment" || t === "after_appointment" ? HOUR_STEPS
+    : t === "client_absent" ? ABSENT_STEPS
+      : t === "birthday" ? [0, ...DAY_STEPS.filter((n) => n <= 7)]
+        : DAY_STEPS;
+const offsetLabel = (t: MessageTrigger) => (n: number) => {
+  const v = String(n).replace(".", ",");
+  if (t === "before_appointment" || t === "after_appointment") return n >= 24 && n % 24 === 0 ? `${n / 24} ${n === 24 ? "dia" : "dias"}` : `${v} h`;
+  if (t === "client_absent") return `${v}×`;
+  if (t === "birthday" && n === 0) return "No dia";
+  return `${v} ${n === 1 ? "dia" : "dias"}`;
+};
 
 export default function Editor({ slug, templates, sample, canEdit }: {
   slug: string; templates: MessageTemplate[]; sample: Record<string, string>; canEdit: boolean;
@@ -92,19 +109,42 @@ function TemplateForm({ slug, initial, sample, canEdit, onSaved, onDeleted, onEr
   const [armDelete, setArmDelete] = useState(false);
   const [pending, start] = useTransition();
   const area = useRef<HTMLTextAreaElement>(null);
+  const [editing, setEditing] = useState(false);
   const trig = TRIGGERS[d.trigger];
   const body = d.body[lang] ?? "";
   const previewText = renderTemplate(d.body[lang]?.trim() ? d.body[lang]! : d.body.pt, sample);
 
   const setBody = (v: string) => setD((x) => ({ ...x, body: { ...x.body, [lang]: v } }));
+  // textos prontos deste gatilho: os modelos padrão + variações (formal, descontraído, curto)
+  const ready = [
+    ...DEFAULT_TEMPLATES.filter((t) => t.trigger === d.trigger).map((t) => ({ label: `Padrão: ${t.name}`, text: t.body[lang] ?? t.body.pt })),
+    ...VARIANTS[d.trigger].map((v) => ({ label: v.label, text: v.body[lang] })),
+  ].filter((o) => o.text);
 
   function insertVar(v: string) {
-    const el = area.current;
+    const el = editing ? area.current : null;
+    if (!el) { setBody(body + (body && !/\s$/.test(body) ? " " : "") + `{${v}}`); return; }
     const token = `{${v}}`;
     const s = el?.selectionStart ?? body.length;
     const e = el?.selectionEnd ?? body.length;
     setBody(body.slice(0, s) + token + body.slice(e));
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(s + token.length, s + token.length); });
+  }
+
+  // trocar o gatilho troca também nome e texto, se ainda forem os prontos do gatilho anterior
+  function changeTrigger(t: MessageTrigger) {
+    const readyOf = (tr: MessageTrigger, l: Lang) => [
+      ...DEFAULT_TEMPLATES.filter((x) => x.trigger === tr).map((x) => x.body[l] ?? ""), ...VARIANTS[tr].map((v) => v.body[l]),
+    ];
+    const firstOf = (tr: MessageTrigger, l: Lang) => DEFAULT_TEMPLATES.find((x) => x.trigger === tr)?.body[l] ?? VARIANTS[tr][0].body[l];
+    const nextBody = { ...d.body };
+    for (const l of ["pt", "en", "es"] as Lang[]) {
+      const cur = d.body[l] ?? "";
+      if ((l === "pt" && !cur.trim()) || (cur.trim() && readyOf(d.trigger, l).includes(cur))) nextBody[l] = firstOf(t, l);
+    }
+    const keepName = d.name.trim() && !NAME_PRESETS[d.trigger].includes(d.name) && !DEFAULT_TEMPLATES.some((x) => x.name === d.name);
+    setD({ ...d, trigger: t, offset: OFFSET_DEFAULT[t], body: nextBody, name: keepName ? d.name : NAME_PRESETS[t][0] });
+    setEditing(false);
   }
 
   function save(copy = false) {
@@ -128,66 +168,89 @@ function TemplateForm({ slug, initial, sample, canEdit, onSaved, onDeleted, onEr
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
       <section className="card space-y-4">
-        <label className="block text-sm font-medium">
-          Nome da mensagem
-          <input className="input mt-1" value={d.name} maxLength={80} disabled={!canEdit} onChange={(e) => setD({ ...d, name: e.target.value })} />
-        </label>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block min-w-[200px] flex-1 text-sm font-medium">
-            Quando enviar
-            <select className="input mt-1" value={d.trigger} disabled={!canEdit}
-              onChange={(e) => setD({ ...d, trigger: e.target.value as MessageTrigger })}>
-              {Object.entries(TRIGGERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-          </label>
-          {d.trigger !== "campaign" && (
-            <label className="block text-sm font-medium">
-              Tempo
-              <span className="mt-1 flex items-center gap-2">
-                <input className="input w-24" type="number" min={0} max={720} step={0.5} value={d.offset} disabled={!canEdit}
-                  onChange={(e) => setD({ ...d, offset: Number(e.target.value) })} />
-                <span className="text-sm font-normal text-neutral-600 dark:text-neutral-400">{trig.unit}</span>
-              </span>
-            </label>
-          )}
+        <div className="min-w-0">
+          <p className="mb-1.5 text-sm font-medium">Quando enviar</p>
+          <Choice name="Quando enviar" size="sm" value={d.trigger}
+            options={(Object.keys(TRIGGERS) as MessageTrigger[]).map((k) => ({ value: k, label: TRIGGERS[k].label }))}
+            onChange={(t) => { if (canEdit && t !== d.trigger) changeTrigger(t); }} />
         </div>
-        <p className="-mt-2 text-xs text-neutral-500">{trig.hint}</p>
 
-        <label className="flex items-center gap-3 text-sm font-medium">
-          <Switch on={d.enabled} disabled={!canEdit} onChange={() => setD({ ...d, enabled: !d.enabled })} label="Envio ligado" />
-          {d.enabled ? "Envio ligado" : "Envio desligado"}
-        </label>
+        {d.trigger !== "campaign" && (
+          <div className="min-w-0">
+            <p className="mb-1.5 text-sm font-medium">Tempo <span className="font-normal text-neutral-500">({trig.unit})</span></p>
+            <PresetNumber key={d.trigger} name="Tempo" presets={offsetSteps(d.trigger)} value={d.offset} format={offsetLabel(d.trigger)}
+              min={0} max={720} step={d.trigger === "client_absent" ? 0.25 : 1} onChange={(v) => canEdit && setD({ ...d, offset: v ?? 0 })} />
+            <p className="mt-1 text-xs text-neutral-500">{trig.hint}</p>
+          </div>
+        )}
+        {d.trigger === "campaign" && <p className="-mt-2 text-xs text-neutral-500">{trig.hint}</p>}
 
-        <div>
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="mb-1.5 text-sm font-medium">Nome da mensagem</p>
+          <PresetText key={d.trigger} name="Nome da mensagem" presets={NAME_PRESETS[d.trigger]} value={d.name} otherPlaceholder="Nome da mensagem"
+            onChange={(v) => canEdit && setD({ ...d, name: v.slice(0, 80) })} />
+        </div>
+
+        {canEdit ? (
+          <Toggle on={d.enabled} onChange={(v) => setD({ ...d, enabled: v })} label={<b className="font-medium">{d.enabled ? "Envio ligado" : "Envio desligado"}</b>} />
+        ) : <p className="text-sm font-medium">{d.enabled ? "Envio ligado" : "Envio desligado"}</p>}
+
+        <div className="min-w-0">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-medium">Texto da mensagem</span>
             <div className="flex gap-1" role="tablist">
               {(["pt", "en", "es"] as Lang[]).map((l) => (
-                <button key={l} role="tab" aria-selected={lang === l} onClick={() => setLang(l)}
+                <button key={l} type="button" role="tab" aria-selected={lang === l} onClick={() => setLang(l)}
                   className={`rounded-lg px-2 py-1 text-xs ${lang === l ? "bg-neutral-900 text-white dark:bg-amber-500 dark:text-neutral-950" : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}>
                   {LANG_LABEL[l]}{l !== "pt" && !d.body[l]?.trim() ? " ·" : ""}
                 </button>
               ))}
             </div>
           </div>
-          <textarea ref={area} className="input min-h-[150px] font-[inherit]" value={body} maxLength={2000} disabled={!canEdit}
-            placeholder={lang === "pt" ? "Escreva a mensagem" : "Opcional. Sem texto aqui, o cliente recebe em português."}
-            onChange={(e) => setBody(e.target.value)} />
+          {canEdit && (
+            <>
+              <p className="mb-1 text-xs text-neutral-500">Escolha um texto pronto</p>
+              <div role="radiogroup" aria-label="Texto pronto" className="mb-2 flex flex-wrap gap-2">
+                {lang !== "pt" && (
+                  <button type="button" role="radio" aria-checked={!body.trim()} className={`chip px-2.5 py-1.5 text-xs ${!body.trim() ? "chip-on" : ""}`}
+                    onClick={() => setBody("")}>Usar o português</button>
+                )}
+                {ready.map((o) => {
+                  const on = body === o.text;
+                  return (
+                    <button type="button" role="radio" aria-checked={on} key={o.label} className={`chip px-2.5 py-1.5 text-xs ${on ? "chip-on" : ""}`}
+                      onClick={() => setBody(o.text)}>{o.label}</button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {editing && canEdit ? (
+            <textarea ref={area} className="input min-h-[150px] font-[inherit]" value={body} maxLength={2000} autoFocus
+              placeholder={lang === "pt" ? "Escreva a mensagem" : "Opcional. Sem texto aqui, o cliente recebe em português."}
+              onChange={(e) => setBody(e.target.value)} />
+          ) : (
+            <div className="min-h-[60px] whitespace-pre-line break-words rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-800/50">
+              {body || <span className="text-neutral-500">{lang === "pt" ? "(sem texto: escolha um texto pronto acima)" : "Sem texto aqui: o cliente recebe em português."}</span>}
+            </div>
+          )}
           {lang !== "pt" && <p className="mt-1 text-xs text-neutral-500">Clientes com o app em {LANG_LABEL[lang].toLowerCase()} recebem este texto. Se ficar vazio, vai o de português.</p>}
         </div>
 
         {canEdit && (
           <div>
-            <p className="mb-1 text-xs font-medium text-neutral-500">Toque para inserir no texto</p>
+            <p className="mb-1 text-xs font-medium text-neutral-500">{editing ? "Toque para inserir no texto" : "Toque para acrescentar no fim do texto"}</p>
             <div className="flex flex-wrap gap-1.5">
               {MESSAGE_VARS.map(([v, hint]) => (
-                <button key={v} title={hint} onClick={() => insertVar(v)}
+                <button key={v} type="button" title={hint} onClick={() => insertVar(v)}
                   className="rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1 font-mono text-xs hover:border-amber-400 dark:border-neutral-700 dark:bg-neutral-800">
                   {`{${v}}`}
                 </button>
               ))}
             </div>
+            <button type="button" className="mt-3 text-xs font-semibold text-amber-700 hover:underline dark:text-amber-400" onClick={() => setEditing((x) => !x)}>
+              {editing ? "Fechar edição do texto" : "Editar texto (último recurso)"}
+            </button>
           </div>
         )}
 
