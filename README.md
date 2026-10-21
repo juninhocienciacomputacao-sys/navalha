@@ -51,10 +51,14 @@ Tudo é escolhido pelo dono. A parte difícil é o atendimento de plano, e o don
 
 Também dá para configurar: aluguel de cadeira, exceções por serviço, produtos, bônus por venda de plano, taxa de cartão, insumos, metas por degrau e garantia mínima. O código está em `src/core/commission.ts`.
 
+## Telas
+
+Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Planos, Financeiro, Comissões, Equipe, Serviços, Mensagens, Shopping e Recursos. Também a TV da recepção (`/tv/[slug]`, com QR code) e o app do cliente (`/b/[slug]`: início, agendar, shopping, meu plano, corte ideal e projeto de visual).
+
 ## Próximos passos
 
-1. Telas de gestão: clientes, planos, comissões, despesas e mensagens automáticas (criar, editar, excluir).
-2. Painel de TV da recepção e fila de encaixe.
-3. Lembretes pela API oficial do WhatsApp Business (1 dia e 2 horas antes). Precisa da conta Meta Business.
-4. Pagamento online (Pix e cartão) com reativação automática do plano e Pix dividido com o barbeiro.
+1. Lembretes pela API oficial do WhatsApp Business (1 dia e 2 horas antes). Precisa da conta Meta Business.
+2. Pagamento online (Pix e cartão) com reativação automática do plano e Pix dividido com o barbeiro. O código de reativação e o webhook do Asaas já estão em `src/modules/client-app/payments.ts`; falta a rota do webhook e a conta no provedor.
+3. Recursos ligados/desligados respeitados também no app do cliente.
+4. IA de verdade para o corte ideal (hoje a análise é simulada).
 5. App instalável, com "compartilhar foto do Instagram" direto para o Navalha.

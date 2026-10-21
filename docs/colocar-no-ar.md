@@ -38,11 +38,7 @@ Observações:
    - Clique no botão **Copy raw file** (ícone de copiar, no canto direito do arquivo).
    - No SQL Editor, clique em **+ New query**, cole e clique em **Run**. Tem que aparecer **Success**.
 
-   Os arquivos, em ordem:
-   1. `supabase/migrations/0001_init.sql`
-   2. `supabase/migrations/0002_booking.sql`
-   3. `supabase/migrations/0003_onboarding.sql`
-   4. `supabase/seed.sql` (opcional: cria a barbearia de exemplo Dom Bigode)
+   Os arquivos, em ordem: **todos** os da pasta `supabase/migrations`, do `0001` ao último número, e depois `supabase/seed.sql` (opcional: cria a barbearia de exemplo Dom Bigode).
 5. Para conferir, abra **Table Editor** no menu da esquerda. As tabelas `shops`, `barbers`, `services` e outras devem aparecer.
 6. Em **Project Settings → API**, anote a **Project URL** e a chave **anon public**. Elas serão usadas no próximo passo.
 

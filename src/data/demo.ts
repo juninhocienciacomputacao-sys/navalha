@@ -2,10 +2,11 @@
 import { atMinutes, addDays, dayInZone } from "@/core/time";
 import { daysUntil } from "@/core/plans";
 import type { AgendaItem, BookInput, BookResult, Busy, Dashboard, Repo, ShopBundle } from "./types";
+import { demoGlobal } from "./demo-global";
 
 const TZ = "America/Sao_Paulo";
 
-const bundle: ShopBundle = {
+const bundle: ShopBundle = demoGlobal("bundle", (): ShopBundle => ({
   shop: {
     id: "demo-shop", slug: "dom-bigode", name: "Dom Bigode Barbearia", address: "Rua Augusta, 1200 · São Paulo",
     currency: "BRL", defaultLang: "pt", timezone: TZ, slotStepMin: 15, planAlertDays: 5,
@@ -29,7 +30,7 @@ const bundle: ShopBundle = {
     { id: "p-full", name: "Corte + Barba Ilimitado", price: 149.9, quotaUses: null, periodDays: 30 },
   ],
   walkIn: { enabled: true, perPeakHour: 2, peakStarts: [11 * 60, 17 * 60, 18 * 60, 19 * 60], blockMin: 45 },
-};
+}));
 
 const SURNAMES = ["Silva", "Souza", "Lima", "Costa", "Rocha", "Alves", "Gomes", "Ribeiro"];
 const NAMES = ["Marcos", "Pedro", "Thiago", "Lucas", "Bruno", "Rafael", "Gustavo", "Felipe", "André", "João", "Caio", "Diego", "Vitor", "Mateus", "Henrique", "Igor"];
@@ -48,7 +49,10 @@ export interface DemoClient {
   id: string; name: string; phone: string; lang: "pt" | "en" | "es"; createdAt: Date;
   preferredBarberId: string | null; notes: string; photoConsentAt: Date | null; noShows: number;
 }
-export interface DemoAppointment extends AgendaItem { clientId: string | null; serviceId: string; subscriptionId: string | null }
+export interface DemoAppointment extends AgendaItem {
+  clientId: string | null; serviceId: string; subscriptionId: string | null;
+  source?: "app" | "whatsapp" | "ai" | "reception" | "walk_in" | "rebook";
+}
 export interface DemoSubscription {
   id: string; clientId: string; planId: string; periodStart: Date; periodEnd: Date; usesInPeriod: number;
   soldByBarberId: string | null; cancelledAt: Date | null;
@@ -62,16 +66,16 @@ export interface DemoPayment {
  * Banco de demonstração em memória, compartilhado por todas as telas.
  * Some quando o servidor reinicia. Cada módulo pode guardar coleções próprias em arquivo próprio.
  */
-export const store = {
+export const store = demoGlobal("store", () => ({
   bundle,
   clients: [] as DemoClient[],
   appointments: [] as DemoAppointment[],
   subscriptions: [] as DemoSubscription[],
   payments: [] as DemoPayment[],
-};
+}));
 const rows = store.appointments;
-let nextId = 1;
-export const demoId = (prefix: string) => `${prefix}-${nextId++}`;
+const ids = demoGlobal("ids", () => ({ n: 1 }));
+export const demoId = (prefix: string) => `${prefix}-${ids.n++}`;
 /** Garante que os dados de exemplo existem. Chame antes de ler o `store`. */
 export function demoSeed() { seed(); return store; }
 
@@ -119,7 +123,7 @@ function seed() {
           const viaPlan = Boolean(sub) && r() < 0.8;
           const startsAt = atMinutes(day, t, TZ);
           rows.push({
-            id: String(nextId++), barberId: b.id, clientName: client.name, clientId: client.id, serviceId: svc.id,
+            id: String(ids.n++), barberId: b.id, clientName: client.name, clientId: client.id, serviceId: svc.id,
             subscriptionId: viaPlan ? sub!.id : null,
             serviceName: svc.name.pt, startsAt, endsAt: new Date(startsAt.getTime() + svc.durationMin * 60_000),
             status: startsAt.getTime() < Date.now() ? (r() < 0.05 ? "no_show" : "done") : "confirmed", price: viaPlan ? 0 : svc.price, viaPlan,
@@ -152,7 +156,7 @@ export const demoRepo: Repo = {
     if (rows.some((x) => live(x) && x.barberId === input.barberId && x.startsAt < endsAt && x.endsAt > input.startsAt)) {
       return { ok: false, error: "slot_taken" };
     }
-    const id = String(nextId++);
+    const id = String(ids.n++);
     let client = input.phone ? store.clients.find((c) => c.phone === input.phone) : undefined;
     if (!client) {
       client = { id: demoId("c"), name: input.name || "Cliente", phone: input.phone ?? "", lang: "pt", createdAt: new Date(),

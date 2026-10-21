@@ -126,5 +126,21 @@ await check('endereço já usado é recusado', () => as(novoDono, async () => {
   throw new Error('deveria ter falhado');
 }));
 
+await check('contador de usos do plano acompanha os atendimentos', async () => {
+  await db.exec(`
+    insert into plans (id, shop_id, name, price, quota_uses) values ('50000000-0000-0000-0000-000000000009', '10000000-0000-0000-0000-000000000001', 'Clube', 90, 4);
+    insert into subscriptions (id, shop_id, client_id, plan_id, period_start, period_end)
+      values ('60000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001',
+              '50000000-0000-0000-0000-000000000009', current_date, current_date + 30);
+    insert into appointments (id, shop_id, barber_id, client_id, service_id, starts_at, ends_at, subscription_id)
+      values ('70000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
+              '40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001',
+              current_date + interval '1 day 3 hours', current_date + interval '1 day 3 hours 40 minutes', '60000000-0000-0000-0000-000000000001');`);
+  const uses = async () => (await db.query(`select uses_in_period n from subscriptions where id = '60000000-0000-0000-0000-000000000001'`)).rows[0].n;
+  if (await uses() !== 1) throw new Error('esperava 1 uso');
+  await db.exec(`update appointments set status = 'cancelled' where id = '70000000-0000-0000-0000-000000000001'`);
+  if (await uses() !== 0) throw new Error('cancelado deveria liberar o uso');
+});
+
 if (fail) { console.error(`${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('banco ok');
