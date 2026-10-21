@@ -894,3 +894,6 @@ end $$;
 create trigger subscriptions_period_changed
 after update of period_start, period_end on subscriptions
 for each row execute function subscriptions_period_changed();
+
+-- Avisa a API do Supabase que as funções mudaram.
+notify pgrst, 'reload schema';

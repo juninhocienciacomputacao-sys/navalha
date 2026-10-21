@@ -8,5 +8,5 @@ const parts = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()
 fs.writeFileSync("supabase/tudo-em-um.sql",
   `-- Gerado por "npm run db:bundle". Não edite à mão: edite supabase/migrations e gere de novo.\n-- Cole este arquivo inteiro no SQL Editor do Supabase e clique em Run (só uma vez, num projeto novo).\n\n` +
   `do $guard$ begin\n  if exists (select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace where t.typname = 'member_role' and n.nspname = 'public') then\n` +
-  `    raise exception 'O banco do Navalha ja foi criado neste projeto. Nao precisa rodar de novo.';\n  end if;\nend $guard$;\n\n${parts.join("\n")}`);
+  `    raise exception 'O banco do Navalha ja foi criado neste projeto. Nao precisa rodar de novo.';\n  end if;\nend $guard$;\n\n${parts.join("\n")}\n-- Avisa a API do Supabase que as funções mudaram.\nnotify pgrst, 'reload schema';\n`);
 console.log("ok supabase/tudo-em-um.sql");
