@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "db:check": "node scripts/db-check.mjs",
-    "db:bundle": "node scripts/db-bundle.mjs"
+    "db:bundle": "node scripts/db-bundle.mjs && node scripts/db-repair.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

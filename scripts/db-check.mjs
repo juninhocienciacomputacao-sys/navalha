@@ -142,5 +142,15 @@ await check('contador de usos do plano acompanha os atendimentos', async () => {
   if (await uses() !== 0) throw new Error('cancelado deveria liberar o uso');
 });
 
+await check('arquivo de reparo recria funções sem mexer nos dados (e roda duas vezes)', async () => {
+  const before = (await db.query('select count(*)::int n from shops')).rows[0].n;
+  await db.exec('drop function create_shop(text, text, text, text, text)');
+  const repair = fs.readFileSync('supabase/reparar-funcoes.sql', 'utf8').replace(/^notify .*$/m, '');
+  await db.exec(repair);
+  await db.exec(repair);
+  if ((await db.query('select count(*)::int n from shops')).rows[0].n !== before) throw new Error('mudou os dados');
+  await as(novoDono, () => db.query(`select create_shop('Depois do reparo', 'depois-do-reparo')`));
+});
+
 if (fail) { console.error(`${fail} verificação(ões) falharam`); process.exit(1); }
 console.log('banco ok');
