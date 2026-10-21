@@ -1,6 +1,12 @@
 -- Gerado por "npm run db:bundle". Não edite à mão: edite supabase/migrations e gere de novo.
 -- Cole este arquivo inteiro no SQL Editor do Supabase e clique em Run (só uma vez, num projeto novo).
 
+do $guard$ begin
+  if exists (select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace where t.typname = 'member_role' and n.nspname = 'public') then
+    raise exception 'O banco do Navalha ja foi criado neste projeto. Nao precisa rodar de novo.';
+  end if;
+end $guard$;
+
 -- ===== 0001_init.sql =====
 -- Navalha: esquema inicial (multi-barbearia).
 -- Cada linha pertence a uma barbearia (shop_id). Funcionários veem só a própria barbearia;
