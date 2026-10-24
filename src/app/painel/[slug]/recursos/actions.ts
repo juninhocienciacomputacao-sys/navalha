@@ -4,20 +4,21 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { assertStaff } from "@/lib/staff";
 import { toMinutes } from "@/core/types";
-import { saveFeature, saveShop, saveWalkIn } from "@/modules/settings/data";
+import { saveFeature, saveModules, saveShop, saveWalkIn } from "@/modules/settings/data";
+import { MODULE_KEYS, type Modules } from "@/core/modules";
 import { FEATURES, FEATURE_KEYS } from "@/modules/settings/features";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const fail = (e: unknown): ActionResult => {
   if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Dados inválidos" };
-  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Só o dono ou o gerente podem mudar as configurações." };
+  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Seu nível de acesso não permite mudar as configurações. Peça ao dono." };
   return { ok: false, error: "Não deu para salvar. Tente de novo." };
 };
 
 async function guarded(slug: string, fn: (shopId: string, walkIn: Awaited<ReturnType<typeof assertStaff>>["bundle"]["walkIn"]) => Promise<void>): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, ["owner", "manager"]);
+    const { bundle } = await assertStaff(slug, "recursos");
     await fn(bundle.shop.id, bundle.walkIn);
   } catch (e) {
     return fail(e);
@@ -44,6 +45,7 @@ function configSchema(key: string) {
 export async function saveFeatureAction(slug: string, key: string, enabled: boolean, config: Record<string, unknown>) {
   return guarded(slug, async (shopId, walkIn) => {
     const k = z.enum(FEATURE_KEYS).parse(key);
+    if (FEATURES.find((f) => f.key === k)?.soon) throw new z.ZodError([{ code: "custom", path: [], message: "Este recurso ainda está em desenvolvimento.", input: k }]);
     const cfg = configSchema(k).parse(config) as Record<string, string | number | boolean>;
     await saveFeature(shopId, k, z.boolean().parse(enabled), cfg, walkIn);
   });
@@ -102,4 +104,11 @@ const shopSchema = z.object({
 
 export async function saveShopInfoAction(slug: string, input: z.input<typeof shopSchema>) {
   return guarded(slug, async (shopId) => saveShop(shopId, shopSchema.parse(input)));
+}
+
+const modulesSchema = z.object(Object.fromEntries(MODULE_KEYS.map((k) => [k, z.boolean()])) as Record<keyof Modules, z.ZodBoolean>).strict();
+
+/** Pacote e módulos: muda o que aparece no painel, na TV e no app do cliente. */
+export async function saveModulesAction(slug: string, input: Modules) {
+  return guarded(slug, async (shopId) => saveModules(shopId, modulesSchema.parse(input)));
 }

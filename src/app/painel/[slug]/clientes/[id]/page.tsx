@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { dayInZone } from "@/core/time";
 import { formatMoney } from "@/core/money";
 import { daysLeft, expiryMessage, waLink } from "@/core/planboard";
@@ -20,7 +20,7 @@ const METHOD = { pix: "Pix", card: "Cartão", cash: "Dinheiro" } as const;
 
 export default async function Ficha({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const { bundle } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "clientes");
   const { shop, barbers } = bundle;
   const c = await getClient(bundle, decodeURIComponent(id));
   if (!c) notFound();
@@ -64,7 +64,7 @@ export default async function Ficha({ params }: { params: Promise<{ slug: string
       </section>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_1fr]">
-        <section className="card">
+        {shop.modules.planos && <section className="card">
           <h2 className="mb-3 font-semibold">Plano</h2>
           {c.sub && plan && left !== null ? (
             <div className="space-y-3 text-sm">
@@ -106,7 +106,7 @@ export default async function Ficha({ params }: { params: Promise<{ slug: string
               </ul>
             </>
           )}
-        </section>
+        </section>}
 
         <ClientForm slug={slug} barbers={barbers} client={{
           id: c.id, name: c.name, phone: c.phone, preferredBarberId: c.preferredBarberId, preferences: c.preferences, notes: c.notes,

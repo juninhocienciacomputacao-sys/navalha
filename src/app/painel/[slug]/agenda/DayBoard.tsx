@@ -1,5 +1,6 @@
 "use client";
 
+import { BarberFace } from "@/components/BarberFace";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toHHMM } from "@/core/types";
@@ -30,11 +31,15 @@ function useNowMinutes(tz: string, enabled: boolean) {
   return enabled ? now : null;
 }
 
-export default function DayBoard({ slug, tz, today, day, open, close, step, barbers, allBarbers, services, items, reserves, queue }: {
+export default function DayBoard({ slug, tz, today, day, open, close, step, barbers, allBarbers, bookable, services, items, reserves, queue }: {
   slug: string; tz: string; today: string; day: string; open: number; close: number; step: number;
-  barbers: BarberView[]; allBarbers: BarberView[]; services: ServiceView[];
+  barbers: BarberView[]; allBarbers: BarberView[];
+  /** Barbeiros em que a pessoa pode marcar e mexer (pelo nível de acesso). */
+  bookable: BarberView[];
+  services: ServiceView[];
   items: DayItem[]; reserves: ReserveView[]; queue: QueueView[];
 }) {
+  const canBook = (id: string) => bookable.some((b) => b.id === id);
   const router = useRouter();
   const nowMin = useNowMinutes(tz, day === today);
   const [newAt, setNewAt] = useState<NewPreset | null>(null);
@@ -47,7 +52,7 @@ export default function DayBoard({ slug, tz, today, day, open, close, step, barb
   const past = (m: number) => day < today || (day === today && nowMin !== null && m < nowMin - step);
 
   function clickColumn(e: React.MouseEvent<HTMLDivElement>, barberId: string) {
-    if (e.target !== e.currentTarget) return;
+    if (e.target !== e.currentTarget || !canBook(barberId)) return;
     const y = e.nativeEvent.offsetY;
     const m = open + Math.floor(y / PX / step) * step;
     if (past(m)) return;
@@ -78,16 +83,17 @@ export default function DayBoard({ slug, tz, today, day, open, close, step, barb
           {barbers.map((b) => {
             const mine = items.filter((x) => x.barberId === b.id && x.status !== "cancelled");
             const count = mine.filter((x) => x.status !== "no_show").length;
+            const mineCol = canBook(b.id);
             return (
               <div key={b.id} className="min-w-[150px] flex-1 border-l border-neutral-100 dark:border-neutral-800">
                 <div className="sticky top-0 flex items-center gap-2 border-b border-neutral-100 px-2 dark:border-neutral-800" style={{ height: HEAD }}>
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold text-white" style={{ background: b.color }}>{b.name.slice(0, 1)}</span>
-                  <span className="leading-tight"><b className="text-sm">{b.name}</b><br /><span className="text-[11px] text-neutral-500">{count} atendimento(s)</span></span>
+                  <BarberFace name={b.name} color={b.color} photo={b.photo} className="h-7 w-7 text-xs" />
+                  <span className="leading-tight"><b className="text-sm">{b.name}</b><br /><span className="text-[11px] text-neutral-500">{mineCol ? `${count} atendimento(s)` : "só livres e ocupados"}</span></span>
                 </div>
-                <div className="relative cursor-cell" style={{
+                <div className={`relative ${mineCol ? "cursor-cell" : "bg-neutral-50/60 dark:bg-neutral-950/40"}`} style={{
                   height: H,
                   backgroundImage: `repeating-linear-gradient(to bottom, var(--grid, rgba(127,127,127,.15)) 0 1px, transparent 1px ${60 * PX}px)`,
-                }} onClick={(e) => clickColumn(e, b.id)} title="Toque num espaço vazio para agendar">
+                }} onClick={(e) => clickColumn(e, b.id)} title={mineCol ? "Toque num espaço vazio para agendar" : "Agenda de um colega: só livre ou ocupado"}>
                   {reserves.filter((r) => r.barberId === b.id).map((r) => (
                     <button key={r.start} onClick={() => setReserve(r)}
                       className={`absolute inset-x-1 rounded-md border-2 border-dashed border-amber-500/70 bg-amber-50/70 px-2 text-left text-[11px] leading-tight text-amber-800 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 ${past(r.end) ? "opacity-40" : ""}`}
@@ -97,6 +103,12 @@ export default function DayBoard({ slug, tz, today, day, open, close, step, barb
                   ))}
                   {mine.map((x) => {
                     const h = (x.end - x.start) * PX - 3;
+                    if (x.masked) return (
+                      <div key={x.id} className="absolute inset-x-1 overflow-hidden rounded-md bg-neutral-300/70 px-2 py-0.5 text-[11px] leading-tight text-neutral-700 dark:bg-neutral-700/70 dark:text-neutral-200"
+                        style={{ top: (x.start - open) * PX + 1, height: h }}>
+                        <b>{toHHMM(x.start)}–{toHHMM(x.end)}</b> ocupado
+                      </div>
+                    );
                     const faded = x.status === "done" ? "opacity-60" : x.status === "no_show" ? "opacity-35 line-through" : "";
                     return (
                       <button key={x.id} onClick={() => setSelected(x)}
@@ -122,10 +134,10 @@ export default function DayBoard({ slug, tz, today, day, open, close, step, barb
           )}
         </div>
       </div>
-      <p className="mt-2 text-xs text-neutral-500">Toque num espaço vazio para agendar. Toque num horário para mudar a situação ou remarcar. ● na cadeira · ✓ concluído · ? sem resposta · ✕ faltou</p>
+      <p className="mt-2 text-xs text-neutral-500">{barbers.some((b) => !canBook(b.id)) && "Colunas cinza são de colegas: dá para ver o que está livre, sem os nomes dos clientes. "}Toque num espaço vazio para agendar. Toque num horário para mudar a situação ou remarcar. ● na cadeira · ✓ concluído · ? sem resposta · ✕ faltou</p>
 
-      {newAt && <NewAppt slug={slug} today={today} barbers={allBarbers} services={services} preset={newAt} onClose={() => setNewAt(null)} />}
-      {selected && <ApptSheet slug={slug} today={today} day={day} item={selected} barbers={allBarbers} onClose={() => setSelected(null)} />}
+      {newAt && <NewAppt slug={slug} today={today} barbers={bookable} services={services} preset={newAt} onClose={() => setNewAt(null)} />}
+      {selected && <ApptSheet slug={slug} today={today} day={day} item={selected} barbers={bookable} onClose={() => setSelected(null)} />}
       {reserve && (
         <Sheet title={`Encaixe ${toHHMM(reserve.start)}–${toHHMM(reserve.end)}`} onClose={() => setReserve(null)}>
           <p className="text-sm text-neutral-600 dark:text-neutral-300">
@@ -135,7 +147,7 @@ export default function DayBoard({ slug, tz, today, day, open, close, step, barb
             {day === today && queue[0] && (
               <button className="btn" disabled={pending} onClick={() => fitHere(reserve)}>Encaixar {queue[0].name} (1º da fila) aqui</button>
             )}
-            <button className="chip" onClick={() => { setNewAt({ day, barberId: reserve.barberId, minutes: reserve.start }); setReserve(null); }}>Agendar outra pessoa aqui</button>
+            {canBook(reserve.barberId) && <button className="chip" onClick={() => { setNewAt({ day, barberId: reserve.barberId, minutes: reserve.start }); setReserve(null); }}>Agendar outra pessoa aqui</button>}
           </div>
         </Sheet>
       )}

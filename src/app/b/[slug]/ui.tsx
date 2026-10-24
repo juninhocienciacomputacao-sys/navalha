@@ -20,6 +20,10 @@ export const shortDate = (d: string, lang: Lang) =>
 export const when = (day: string, minutes: number, today: string, lang: Lang, L: Dict) => `${dayLabel(day, today, lang, L)} ${L.at} ${toHHMM(minutes)}`;
 
 export function Avatar({ b, size = "size-10" }: { b?: BarberInfo; size?: string }) {
+  if (b?.photo) {
+    // eslint-disable-next-line @next/next/no-img-element -- foto pequena guardada no banco (data URL)
+    return <img src={b.photo} alt={b.name} className={`${size} shrink-0 rounded-full object-cover`} style={{ boxShadow: `0 0 0 2px ${b.color ?? "#737373"}` }} />;
+  }
   return (
     <span className={`${size} grid shrink-0 place-items-center rounded-full text-xs font-bold text-white`} style={{ background: b?.color ?? "#737373" }}>
       {b ? initials(b.name) : "?"}

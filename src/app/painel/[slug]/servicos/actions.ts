@@ -19,13 +19,13 @@ const serviceSchema = z.object({
 
 const fail = (e: unknown): ActionResult => {
   if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Dados inválidos" };
-  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Só o dono ou o gerente podem mudar os serviços." };
+  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Seu nível de acesso não permite mudar os serviços. Peça ao dono." };
   return { ok: false, error: "Não deu para salvar. Tente de novo." };
 };
 
 export async function saveServiceAction(slug: string, input: z.input<typeof serviceSchema>): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, ["owner", "manager"]);
+    const { bundle } = await assertStaff(slug, "servicos");
     await saveService(bundle.shop.id, serviceSchema.parse(input));
   } catch (e) {
     return fail(e);
@@ -37,7 +37,7 @@ export async function saveServiceAction(slug: string, input: z.input<typeof serv
 
 export async function setServiceActiveAction(slug: string, id: string, active: boolean): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, ["owner", "manager"]);
+    const { bundle } = await assertStaff(slug, "servicos");
     const p = z.object({ id: z.string().min(1), active: z.boolean() }).parse({ id, active });
     await setServiceActive(bundle.shop.id, p.id, p.active);
   } catch (e) {

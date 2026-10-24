@@ -7,7 +7,6 @@ import { deleteExpense, getExpense, saveExpense, setExpensePaid } from "@/module
 import { togglePaid } from "@/core/finance";
 import { dayInZone } from "@/core/time";
 
-const MONEY = ["owner", "manager"] as const;
 type Result = { ok: true } | { ok: false; error: string };
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.");
 const id = z.string().min(1).max(64);
@@ -31,7 +30,7 @@ const done = (slug: string) => {
 const fail = (e: unknown): Result => ({ ok: false, error: e instanceof Error && e.message !== "not_found" ? e.message : "Conta não encontrada." });
 
 export async function saveExpenseAction(slug: string, input: z.input<typeof expenseSchema>): Promise<Result> {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "financeiro");
   const p = expenseSchema.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Dados inválidos." };
   try { await saveExpense(bundle, p.data); } catch (e) { return fail(e); }
@@ -40,7 +39,7 @@ export async function saveExpenseAction(slug: string, input: z.input<typeof expe
 }
 
 export async function deleteExpenseAction(slug: string, expenseId: string): Promise<Result> {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "financeiro");
   if (!id.safeParse(expenseId).success) return { ok: false, error: "Conta inválida." };
   try { await deleteExpense(bundle, expenseId); } catch (e) { return fail(e); }
   done(slug);
@@ -48,7 +47,7 @@ export async function deleteExpenseAction(slug: string, expenseId: string): Prom
 }
 
 export async function setExpensePaidAction(slug: string, expenseId: string, month: string, paid: boolean): Promise<Result> {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "financeiro");
   if (!id.safeParse(expenseId).success || !/^\d{4}-\d{2}$/.test(month)) return { ok: false, error: "Dados inválidos." };
   const e = await getExpense(bundle, expenseId);
   if (!e) return { ok: false, error: "Conta não encontrada." };

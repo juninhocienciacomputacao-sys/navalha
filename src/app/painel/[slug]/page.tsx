@@ -1,5 +1,6 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import Link from "next/link";
+import { siteOrigin } from "@/modules/messages/origin";
 import { atMinutes, dayInZone, minutesInZone, weekday } from "@/core/time";
 import { daysUntil } from "@/core/plans";
 import { formatMoney } from "@/core/money";
@@ -11,8 +12,10 @@ const PX_PER_MIN = 1.1;
 
 export default async function Painel({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { r, bundle: b } = await requireStaff(slug);
+  const { r, bundle: b } = await requireSection(slug, "painel");
   const { shop, barbers } = b;
+  const mods = shop.modules;
+  const appLink = `${await siteOrigin()}/b/${shop.slug}?tab=plan`;
   const tz = shop.timezone;
   const now = new Date();
   const today = dayInZone(now, tz);
@@ -26,7 +29,9 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
   const open = hours ? toMinutes(hours.open) : 9 * 60;
   const close = hours ? toMinutes(hours.close) : 20 * 60;
   const nowMin = minutesInZone(now, tz);
-  const maxRevenue = Math.max(1, ...dash.perBarber.map((x) => x.revenue));
+  // barra por faturamento (ou por atendimentos, com o Financeiro desligado)
+  const barValue = (x: { revenue: number; appointments: number }) => (shop.modules.financeiro ? x.revenue : x.appointments);
+  const maxBar = Math.max(1, ...dash.perBarber.map(barValue));
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -38,14 +43,26 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
         <Link href={`/painel/${shop.slug}/agenda`} className="btn">Agenda completa</Link>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Faturamento do mês" value={money(dash.revenueMonth)} />
+      <section className={`grid grid-cols-2 gap-3 ${2 + Number(mods.financeiro) + Number(mods.planos) > 3 ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+        {mods.financeiro && <Kpi label="Faturamento do mês" value={money(dash.revenueMonth)} />}
         <Kpi label="Atendimentos no mês" value={String(dash.appointmentsMonth)} />
         <Kpi label="Clientes" value={String(dash.clients)} />
-        <Kpi label="Planos ativos" value={String(dash.activeSubscriptions)} />
+        {mods.planos && <Kpi label="Planos ativos" value={String(dash.activeSubscriptions)} />}
       </section>
 
-      {dash.planAlerts.length > 0 && (
+      {!barbers.length && (
+        <section className="card mt-6 border-amber-300 bg-amber-50 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+          <b>Primeiros passos:</b> cadastre a equipe em <Link className="underline" href={`/painel/${shop.slug}/equipe`}>Equipe</Link> e
+          os serviços em <Link className="underline" href={`/painel/${shop.slug}/servicos`}>Serviços</Link>. Depois disso o app do cliente já aceita agendamentos.
+        </section>
+      )}
+      {barbers.length > 0 && !b.services.length && (
+        <section className="card mt-6 border-amber-300 bg-amber-50 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+          <b>Falta pouco:</b> cadastre pelo menos um serviço em <Link className="underline" href={`/painel/${shop.slug}/servicos`}>Serviços</Link> para o app do cliente aceitar agendamentos.
+        </section>
+      )}
+
+      {mods.planos && dash.planAlerts.length > 0 && (
         <section className="card mt-6">
           <h2 className="mb-3 font-semibold">Planos vencendo ou vencidos</h2>
           <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -59,7 +76,9 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
                       {left < 0 ? `venceu há ${-left} dia(s)` : left === 0 ? "vence hoje" : `vence em ${left} dia(s)`}
                     </span>
                     <a className="text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-400" target="_blank"
-                      href={`https://wa.me/${a.phone.replace("+", "")}?text=${encodeURIComponent(`Oi ${a.clientName}! Seu plano ${a.planName} na ${shop.name} está para vencer. Renove pelo app para continuar.`)}`}>
+                      href={`https://wa.me/${a.phone.replace("+", "")}?text=${encodeURIComponent(left < 0
+                        ? `Oi ${a.clientName}! Seu plano ${a.planName} na ${shop.name} venceu. Renove pelo app e ele volta a valer na hora: ${appLink}`
+                        : `Oi ${a.clientName}! Seu plano ${a.planName} na ${shop.name} está para vencer. Renove pelo app para continuar: ${appLink}`)}`}>
                       Avisar
                     </a>
                   </span>
@@ -110,16 +129,16 @@ export default async function Painel({ params }: { params: Promise<{ slug: strin
               <div key={br.id} className="grid grid-cols-[80px_1fr_auto] items-center gap-3 text-sm">
                 <span className="font-medium">{br.name}</span>
                 <div className="h-3 rounded-full bg-neutral-100 dark:bg-neutral-800">
-                  <div className="h-3 rounded-full" style={{ width: `${(p.revenue / maxRevenue) * 100}%`, background: br.color ?? "#555" }} />
+                  <div className="h-3 rounded-full" style={{ width: `${(barValue(p) / maxBar) * 100}%`, background: br.color ?? "#555" }} />
                 </div>
                 <span className="text-right tabular-nums text-neutral-600 dark:text-neutral-300">
-                  {money(p.revenue)} · {p.appointments} atend. · {Math.round(p.minutes / 60)} h
+                  {mods.financeiro ? `${money(p.revenue)} · ` : ""}{p.appointments} atend. · {Math.round(p.minutes / 60)} h
                 </span>
               </div>
             );
           })}
         </div>
-        <p className="mt-3 text-xs text-neutral-500">Faturamento avulso. Atendimentos de plano entram no cálculo de comissão pela regra escolhida pelo dono.</p>
+        {mods.financeiro && <p className="mt-3 text-xs text-neutral-500">Faturamento avulso. Atendimentos de plano entram no cálculo de comissão pela regra escolhida pelo dono.</p>}
       </section>
     </main>
   );

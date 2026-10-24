@@ -268,7 +268,7 @@ function TemplateForm({ slug, initial, sample, canEdit, onSaved, onDeleted, onEr
             )}
           </div>
         ) : (
-          <p className="text-xs text-neutral-500">Só o dono ou o gerente pode mudar as mensagens.</p>
+          <p className="text-xs text-neutral-500">Seu nível de acesso não permite mudar as mensagens. Peça ao dono.</p>
         )}
       </section>
 

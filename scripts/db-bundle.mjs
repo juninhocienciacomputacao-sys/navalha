@@ -30,13 +30,23 @@ notify pgrst, 'reload schema';
 
 -- Conferência: tudo tem que dar o número indicado e "pode_criar" = true.
 select
-  (select count(*) from pg_tables where schemaname = 'public') as tabelas_23,
+  (select count(*) from pg_tables where schemaname = 'public') as tabelas_24,
   (select count(*) from pg_type t join pg_namespace n on n.oid = t.typnamespace where n.nspname = 'public' and t.typtype = 'e') as tipos_11,
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.prokind = 'f' and p.proname in (
     'is_member','my_client_ids','busy_slots','my_phone','book_appointment','cancel_my_appointment','create_shop',
     'insert_default_message_templates','shops_default_messages','start_plan_payment','set_payment_provider_ref','confirm_plan_payment',
-    'fail_plan_payment','set_my_photo_consent','create_my_style_project','refresh_plan_uses','appointments_plan_uses','subscriptions_period_changed')) as funcoes_18,
+    'fail_plan_payment','set_my_photo_consent','create_my_style_project','refresh_plan_uses','appointments_plan_uses','subscriptions_period_changed',
+    'access_defaults','my_access','can_section','sees_barber','shops_guard_access','shop_members_fill_phone','claim_staff_invites','set_member_access','remove_member')) as funcoes_27,
   has_function_privilege('authenticated', 'public.create_shop(text,text,text,text,text)', 'execute') as pode_criar;
 `;
 fs.writeFileSync("supabase/recomecar-do-zero.sql", reset);
 console.log("ok supabase/recomecar-do-zero.sql");
+
+// Atualização de um banco que já existe (criado até a 0010): só as migrações novas, todas podem rodar mais de uma vez.
+const novas = fs.readdirSync(dir).filter((f) => f.endsWith(".sql") && f >= "0011").sort()
+  .map((f) => `-- ===== ${f} =====\n${fs.readFileSync(path.join(dir, f), "utf8").trim()}\n`);
+fs.writeFileSync("supabase/atualizar-banco.sql",
+  `-- Gerado por "npm run db:bundle". Atualiza um banco do Navalha que já está no ar, sem apagar dados.\n` +
+  `-- Cole este arquivo inteiro no SQL Editor do Supabase e clique em Run. Pode rodar mais de uma vez.\n\n` +
+  `${novas.join("\n")}\n-- Avisa a API do Supabase que as tabelas e funções mudaram.\nnotify pgrst, 'reload schema';\n`);
+console.log("ok supabase/atualizar-banco.sql");

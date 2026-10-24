@@ -86,6 +86,10 @@ await check('catálogo de serviços é público', () => as({}, async () => {
   if (r.rows[0].n !== 1) throw new Error('viu ' + r.rows[0].n);
 }));
 
+// a barbearia de teste abre todo dia das 08:00 às 20:00 (o agendamento confere o horário de funcionamento)
+await db.exec(`update shops set opening_hours = (select jsonb_object_agg(d::text, '{"open":"08:00","close":"20:00"}'::jsonb) from generate_series(0, 6) d)
+  where id = '10000000-0000-0000-0000-000000000001'`);
+
 const marcos = { sub: '00000000-0000-0000-0000-000000000099', phone: '5511988887777' };
 const novo = { sub: '00000000-0000-0000-0000-000000000097', phone: '+5511955554444' };
 const book = (start) => db.query(`select book_appointment('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
@@ -114,6 +118,66 @@ await check('cliente cancela o próprio horário, não o de outro', () => as(mar
   await db.query('select cancel_my_appointment($1)', [mine.rows[0].id]);
 }));
 
+await check('agendar fora do horário de funcionamento é recusado', async () => {
+  for (const t of ['2030-01-10 03:00-03', '2030-01-10 19:40-03']) {
+    await as(novo, async () => {
+      try { await book(t); } catch (e) { if (/slot_taken/.test(e.message)) return; throw e; }
+      throw new Error('aceitou ' + t);
+    });
+  }
+});
+await check('agendar em dia fechado é recusado', async () => {
+  await db.exec(`update shops set opening_hours = opening_hours - '0' where id = '10000000-0000-0000-0000-000000000001'`);
+  try {
+    await as(novo, async () => {
+      try { await book('2030-01-13 10:00-03'); } catch (e) { if (/slot_taken/.test(e.message)) return; throw e; } // domingo
+      throw new Error('aceitou domingo');
+    });
+  } finally {
+    await db.exec(`update shops set opening_hours = opening_hours || '{"0":{"open":"08:00","close":"20:00"}}' where id = '10000000-0000-0000-0000-000000000001'`);
+  }
+});
+await check('app não chama funções internas do banco', () => as(novo, async () => {
+  await expectError(`select insert_default_message_templates('10000000-0000-0000-0000-000000000002')`);
+}));
+await check('app do cliente lê os módulos e só o liga/desliga público dos recursos', async () => {
+  await db.exec(`update shops set modules = '{"financeiro": false}' where id = '10000000-0000-0000-0000-000000000001';
+    insert into shop_features (shop_id, key, enabled) values ('10000000-0000-0000-0000-000000000001', 'rebook', true),
+                                                           ('10000000-0000-0000-0000-000000000001', 'ai_receptionist', true);`);
+  await as({}, async () => {
+    const m = await db.query(`select modules from shops where id = '10000000-0000-0000-0000-000000000001'`);
+    if (m.rows[0].modules.financeiro !== false) throw new Error(JSON.stringify(m.rows));
+    const f = await db.query(`select key from shop_features`);
+    if (f.rows.map((x) => x.key).join() !== 'rebook') throw new Error(JSON.stringify(f.rows));
+  });
+  await expectError(`update shops set modules = '[]' where id = '10000000-0000-0000-0000-000000000001'`);
+});
+await check('plano sem uso sobrando ou com módulo Planos desligado: horário cobrado', async () => {
+  await db.exec(`
+    insert into plans (id, shop_id, name, price, quota_uses) values ('50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Um corte', 40, 1);
+    insert into plan_services values ('50000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001');
+    insert into clients (id, shop_id, phone_e164, name) values ('40000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '+5511966665555', 'Assinante');
+    insert into subscriptions (shop_id, client_id, plan_id, period_start, period_end)
+      values ('10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', current_date, current_date + 30);`);
+  const assinante = { sub: '00000000-0000-0000-0000-000000000077', phone: '5511966665555' };
+  const at = (days, hour) => `${new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)} ${hour}:00-03`;
+  const price = async (t) => {
+    const r = await db.query(`select book_appointment('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
+      '30000000-0000-0000-0000-000000000001', $1) id`, [t]);
+    return Number((await db.query(`select price from appointments where id = $1`, [r.rows[0].id])).rows[0].price);
+  };
+  await as(assinante, async () => {
+    if (await price(at(2, '10')) !== 0) throw new Error('primeiro uso deveria sair pelo plano');
+    if (await price(at(3, '10')) !== 50) throw new Error('cota acabou: deveria cobrar');
+  });
+  await db.exec(`update shops set modules = '{"planos": false}' where id = '10000000-0000-0000-0000-000000000001';
+    update subscriptions set uses_in_period = 0 where client_id = '40000000-0000-0000-0000-000000000003';`);
+  await as(assinante, async () => {
+    if (await price(at(4, '10')) !== 50) throw new Error('módulo desligado: deveria cobrar');
+  });
+  await db.exec(`update shops set modules = '{}' where id = '10000000-0000-0000-0000-000000000001'`);
+});
+
 const novoDono = { sub: '00000000-0000-0000-0000-000000000050', phone: '5511911112222' };
 await db.exec(`insert into auth.users values ('00000000-0000-0000-0000-000000000050', '+5511911112222')`);
 await check('dono novo cadastra a barbearia e vira dono dela', () => as(novoDono, async () => {
@@ -141,6 +205,97 @@ await check('contador de usos do plano acompanha os atendimentos', async () => {
   await db.exec(`update appointments set status = 'cancelled' where id = '70000000-0000-0000-0000-000000000001'`);
   if (await uses() !== 0) throw new Error('cancelado deveria liberar o uso');
 });
+
+// ---------- níveis de acesso da equipe ----------
+const SHOP = '10000000-0000-0000-0000-000000000001';
+const RAFA = '20000000-0000-0000-0000-000000000001';
+const JACK = '20000000-0000-0000-0000-000000000002';
+const rafaUser = { sub: '00000000-0000-0000-0000-000000000061', phone: '5562900000061' };
+const recep = { sub: '00000000-0000-0000-0000-000000000062', phone: '5562900000062' };
+const ownerC = { sub: owner, phone: '5511900000001' };
+await db.exec(`
+  insert into auth.users values ('${rafaUser.sub}', '+${rafaUser.phone}'), ('${recep.sub}', '+${recep.phone}');
+  insert into barbers (id, shop_id, display_name) values ('${JACK}', '${SHOP}', 'Jack');
+  insert into appointments (shop_id, barber_id, service_id, starts_at, ends_at, walk_in_name)
+    values ('${SHOP}', '${JACK}', '30000000-0000-0000-0000-000000000001', '2026-10-22 10:00-03', '2026-10-22 10:40-03', 'Cliente do Jack');`);
+const count = async (sql) => (await db.query(sql)).rows[0].n;
+
+await check('quem só tem convite ainda não é da equipe', () => as(rafaUser, async () => {
+  if (await count('select count(*)::int n from appointments') !== 0) throw new Error('viu a agenda antes de aceitar');
+}));
+await check('só o dono convida', async () => {
+  await as(recep, () => expectError(`insert into staff_invites (shop_id, phone_e164, role) values ('${SHOP}', '+5562900000099', 'owner')`));
+  await as(ownerC, () => db.query(`insert into staff_invites (shop_id, phone_e164, role, barber_id, display_name) values
+    ('${SHOP}', '+${rafaUser.phone}', 'barber', '${RAFA}', 'Rafa'), ('${SHOP}', '+${recep.phone}', 'reception', null, 'Ana')`));
+  // as() desfaz no fim; grava de verdade para os próximos testes
+  await db.exec(`insert into staff_invites (shop_id, phone_e164, role, barber_id, display_name) values
+    ('${SHOP}', '+${rafaUser.phone}', 'barber', '${RAFA}', 'Rafa'), ('${SHOP}', '+${recep.phone}', 'reception', null, 'Ana')`);
+});
+await check('convite vira acesso quando a pessoa entra pelo WhatsApp', async () => {
+  await db.exec(`begin; set local role authenticated;
+    select set_config('request.jwt.claim.sub', '${rafaUser.sub}', true), set_config('request.jwt.claims', '${JSON.stringify(rafaUser)}', true);
+    select claim_staff_invites();
+    select set_config('request.jwt.claim.sub', '${recep.sub}', true), set_config('request.jwt.claims', '${JSON.stringify(recep)}', true);
+    select claim_staff_invites();
+    commit;`);
+  const r = await db.query(`select m.role, m.phone_e164, (select user_id from barbers where id = '${RAFA}') = m.user_id linked
+    from shop_members m where m.user_id = '${rafaUser.sub}'`);
+  if (r.rows[0]?.role !== 'barber' || !r.rows[0].linked || r.rows[0].phone_e164 !== '+' + rafaUser.phone) throw new Error(JSON.stringify(r.rows));
+  if (await count('select count(*)::int n from staff_invites') !== 0) throw new Error('convite ficou');
+});
+await check('barbeiro vê só os próprios atendimentos (e o ocupado dos colegas sem nomes)', () => as(rafaUser, async () => {
+  const r = await db.query(`select distinct barber_id from appointments`);
+  if (r.rows.length !== 1 || r.rows[0].barber_id !== RAFA) throw new Error(JSON.stringify(r.rows));
+  const busy = await db.query(`select * from busy_slots('${SHOP}', '2026-10-22 00:00-03', '2026-10-23 00:00-03')`);
+  if (!busy.rows.some((x) => x.barber_id === JACK)) throw new Error('não viu o ocupado do Jack');
+}));
+await check('barbeiro não marca na agenda do colega', () => as(rafaUser, () => expectError(
+  `insert into appointments (shop_id, barber_id, service_id, starts_at, ends_at, walk_in_name)
+   values ('${SHOP}', '${JACK}', '30000000-0000-0000-0000-000000000001', '2030-03-01 10:00-03', '2030-03-01 10:40-03', 'X')`)));
+await check('barbeiro não muda preço de serviço nem despesas', () => as(rafaUser, async () => {
+  const r = await db.query(`update services set price = 1 where shop_id = '${SHOP}' returning id`);
+  if (r.rows.length) throw new Error('mudou o preço');
+  await expectError(`insert into expenses (shop_id, name, amount) values ('${SHOP}', 'x', 1)`);
+}));
+await check('recepção vê a agenda de todos', () => as(recep, async () => {
+  if (await count(`select count(distinct barber_id)::int n from appointments`) !== 2) throw new Error('não viu todos');
+}));
+await check('dono libera Serviços para a recepção e ela passa a poder mudar', async () => {
+  await as(recep, async () => {
+    if ((await db.query(`update services set price = 55 where shop_id = '${SHOP}' returning id`)).rows.length) throw new Error('mudou antes de liberar');
+  });
+  await db.exec(`update shops set role_access = '{"reception":{"sections":["servicos"]}}' where id = '${SHOP}'`);
+  await as(recep, async () => {
+    if (!(await db.query(`update services set price = 55 where shop_id = '${SHOP}' returning id`)).rows.length) throw new Error('não mudou');
+    const a = (await db.query(`select my_access('${SHOP}') a`)).rows[0].a;
+    if (a.agenda !== 'all' || a.role !== 'reception') throw new Error(JSON.stringify(a));
+  });
+});
+await check('dono troca o barbeiro para "só a própria agenda" e de volta', async () => {
+  await db.exec(`update shops set role_access = '{"barber":{"sections":[],"agenda":"all"}}' where id = '${SHOP}'`);
+  await as(rafaUser, async () => { if (await count(`select count(distinct barber_id)::int n from appointments`) !== 2) throw new Error('não abriu'); });
+  await db.exec(`update shops set role_access = '{}' where id = '${SHOP}'`);
+});
+await check('só o dono muda os níveis (nem quem cuida dos Recursos)', async () => {
+  await db.exec(`update shops set role_access = '{"reception":{"sections":["recursos"]}}' where id = '${SHOP}'`);
+  await as(recep, async () => {
+    await db.query(`update shops set address = 'Rua 1' where id = '${SHOP}'`);
+    await expectError(`update shops set role_access = '{"reception":{"sections":["recursos","financeiro"]}}' where id = '${SHOP}'`);
+  });
+  await as(recep, () => expectError(`select set_member_access('${SHOP}', '${recep.sub}', 'owner')`));
+  await db.exec(`update shops set role_access = '{}' where id = '${SHOP}'`);
+});
+await check('dono não pode deixar a barbearia sem dono', () => as(ownerC, async () => {
+  try { await db.query(`select remove_member('${SHOP}', '${owner}')`); } catch (e) { if (/last_owner/.test(e.message)) return; throw e; }
+  throw new Error('deveria ter falhado');
+}));
+await check('dono muda o nível e o barbeiro ligado de alguém', () => as(ownerC, async () => {
+  await db.query(`select set_member_access('${SHOP}', '${rafaUser.sub}', 'barber', '${JACK}')`);
+  const r = await db.query(`select id from barbers where user_id = '${rafaUser.sub}'`);
+  if (r.rows.length !== 1 || r.rows[0].id !== JACK) throw new Error(JSON.stringify(r.rows));
+  await db.query(`select remove_member('${SHOP}', '${recep.sub}')`);
+  if (await count(`select count(*)::int n from shop_members where user_id = '${recep.sub}'`) !== 0) throw new Error('não removeu');
+}));
 
 await check('arquivo de reparo recria funções sem mexer nos dados (e roda duas vezes)', async () => {
   const before = (await db.query('select count(*)::int n from shops')).rows[0].n;

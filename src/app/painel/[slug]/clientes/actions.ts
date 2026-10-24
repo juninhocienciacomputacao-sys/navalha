@@ -16,7 +16,7 @@ const phone = z.string().trim().max(25).transform((v, ctx) => {
 const fail = (e: z.ZodError) => ({ ok: false as const, error: e.issues[0]?.message ?? "Dados inválidos." });
 
 export async function addClient(slug: string, input: { name: string; phone: string }) {
-  const { bundle } = await assertStaff(slug);
+  const { bundle } = await assertStaff(slug, "clientes");
   const p = z.object({ name, phone }).safeParse(input);
   if (!p.success) return fail(p.error);
   const r = await createClient(bundle, p.data);
@@ -33,7 +33,7 @@ const patch = z.object({
 });
 
 export async function saveClient(slug: string, id: string, input: z.input<typeof patch>) {
-  const { bundle } = await assertStaff(slug);
+  const { bundle } = await assertStaff(slug, "clientes");
   const p = patch.safeParse(input);
   if (!p.success) return fail(p.error);
   const r = await updateClient(bundle, z.string().max(64).parse(id), p.data);

@@ -8,7 +8,8 @@ import type { I18nText, Lang, Service } from "@/core/types";
 import { toHHMM, toMinutes } from "@/core/types";
 import { addDays, atMinutes, dayInZone, weekday } from "@/core/time";
 import type { StatAppointment } from "@/core/barberStats";
-import { withDefaults, type FeatureKey, type FeatureState } from "./features";
+import { FEATURES, withDefaults, type FeatureKey, type FeatureState } from "./features";
+import type { Modules } from "@/core/modules";
 import { demoGlobal } from "@/data/demo-global";
 
 export interface TeamBarber {
@@ -16,6 +17,7 @@ export interface TeamBarber {
   name: string;
   roleTitle: string | null;
   color: string | null;
+  photo: string | null;
   active: boolean;
   pay: "commission" | "chair_rent";
   commissionPct: number;
@@ -147,11 +149,11 @@ export async function listBarbers(shopId: string): Promise<TeamBarber[]> {
   }
   const db = await supabaseServer();
   const { data, error } = await db.from("barbers")
-    .select("id, display_name, role_title, color, active, pay, commission_pct, chair_rent, monthly_goal, sort")
+    .select("id, display_name, role_title, color, photo, active, pay, commission_pct, chair_rent, monthly_goal, sort")
     .eq("shop_id", shopId).order("sort").order("display_name");
   if (error) throw error;
   return (data ?? []).map((b) => ({
-    id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, active: b.active, pay: b.pay,
+    id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, photo: b.photo ?? null, active: b.active, pay: b.pay,
     commissionPct: Number(b.commission_pct), chairRent: Number(b.chair_rent),
     monthlyGoal: b.monthly_goal === null ? null : Number(b.monthly_goal), sort: b.sort,
   }));
@@ -161,14 +163,14 @@ export async function saveBarber(shopId: string, input: BarberInput): Promise<st
   if (!sb()) {
     isDemoShop(shopId);
     const d = demoTeam();
-    const { id, name, roleTitle, color, ...extra } = input;
+    const { id, name, roleTitle, color, photo, ...extra } = input;
     let row = id ? d.barbers.get(id) : undefined;
     if (id && !row) throw new Error("not_found");
     if (!row) {
-      row = { obj: { id: demoId("b"), name, roleTitle, color }, active: true, ...extra };
+      row = { obj: { id: demoId("b"), name, roleTitle, color, photo }, active: true, ...extra };
       d.barbers.set(row.obj.id, row);
     } else {
-      Object.assign(row.obj, { name, roleTitle, color });
+      Object.assign(row.obj, { name, roleTitle, color, photo });
       Object.assign(row, extra);
     }
     syncBundle();
@@ -176,7 +178,7 @@ export async function saveBarber(shopId: string, input: BarberInput): Promise<st
   }
   const db = await supabaseServer();
   const row = {
-    display_name: input.name, role_title: input.roleTitle, color: input.color, pay: input.pay,
+    display_name: input.name, role_title: input.roleTitle, color: input.color, photo: input.photo, pay: input.pay,
     commission_pct: input.commissionPct, chair_rent: input.chairRent, monthly_goal: input.monthlyGoal, sort: input.sort,
   };
   if (input.id) {
@@ -394,4 +396,34 @@ async function saveFeatureRow(shopId: string, key: string, enabled: boolean, con
 /** Recursos da barbearia (com padrões), para outras telas consultarem se algo está ligado. */
 export async function featureStates(bundle: ShopBundle): Promise<FeatureState[]> {
   return (await getSettings(bundle.shop.id, bundle.shop, bundle.walkIn)).features;
+}
+
+// ---------------------------------------------------------------- módulos (pacote)
+
+export async function saveModules(shopId: string, modules: Modules) {
+  if (!sb()) {
+    isDemoShop(shopId);
+    store.bundle.shop.modules = { ...modules };
+    return;
+  }
+  const db = await supabaseServer();
+  const { error } = await db.from("shops").update({ modules }).eq("id", shopId);
+  if (error) throw error;
+}
+
+/**
+ * Liga/desliga de "sugerir o próximo horário" e quantos dias depois, para o app do cliente
+ * (o banco deixa qualquer um ler só a linha "rebook" dos recursos).
+ */
+export async function rebookSetting(shopId: string): Promise<{ on: boolean; days: number }> {
+  const def = FEATURES.find((f) => f.key === "rebook")!;
+  let row: { key: string; enabled: boolean; config: unknown } | undefined;
+  if (!sb()) row = demo.features.find((f) => f.key === "rebook");
+  else {
+    const db = await supabaseServer();
+    const { data } = await db.from("shop_features").select("key, enabled, config").eq("shop_id", shopId).eq("key", "rebook").maybeSingle();
+    row = data ?? undefined;
+  }
+  const st = withDefaults(row ? [row] : []).find((f) => f.key === "rebook")!;
+  return { on: st.enabled, days: Number(st.config.days ?? def.defaults.days) || 7 };
 }

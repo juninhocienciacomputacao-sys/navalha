@@ -9,8 +9,16 @@ const out = [
   "grant select, insert, update, delete on all tables in schema public to anon, authenticated;",
   "grant usage, select on all sequences in schema public to anon, authenticated;",
 ];
+// colunas novas (com "if not exists"): trazem um banco antigo para a versão atual
+out.push(...(src.match(/^alter table \w+ add column if not exists[\s\S]*?;/gm) ?? []));
 const fns = src.match(/^create or replace function[\s\S]*?\bas \$\$[\s\S]*?\$\$;/gm) ?? [];
 out.push(...fns);
+// políticas no formato "drop policy if exists X on T;" seguido de "create policy X on T ...;" (mesmo nome e tabela)
+out.push(...(src.match(/^drop policy if exists [^\n]*;\ncreate policy [^\n]*;$/gm) ?? []).filter((x) => {
+  const [, a, ta] = x.match(/^drop policy if exists (\w+) on (\w+)/) ?? [];
+  const [, b, tb] = x.match(/\ncreate policy (\w+) on (\w+)/) ?? [];
+  return a && a === b && ta === tb;
+}));
 out.push(...(src.match(/^(grant|revoke) [^\n]*;$/gm) ?? []));
 out.push(...(src.match(/^do \$\$\nbegin\n  if exists \(select 1 from pg_roles[\s\S]*?end \$\$;/gm) ?? []));
 for (const t of src.match(/^create trigger[\s\S]*?;/gm) ?? []) {
@@ -20,5 +28,5 @@ for (const t of src.match(/^create trigger[\s\S]*?;/gm) ?? []) {
 out.push(...(src.match(/^-- barbearias já cadastradas\ndo \$\$[\s\S]*?end \$\$;/gm) ?? []));
 out.push("notify pgrst, 'reload schema';");
 fs.writeFileSync("supabase/reparar-funcoes.sql",
-  `-- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.\n-- Não apaga nem altera dados. Pode rodar mais de uma vez.\n\n` + out.join("\n\n") + "\n");
+  `-- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.\n-- Não apaga dados (só cria colunas novas que faltarem). Pode rodar mais de uma vez.\n\n` + out.join("\n\n") + "\n");
 console.log(`ok supabase/reparar-funcoes.sql (${fns.length} funções)`);

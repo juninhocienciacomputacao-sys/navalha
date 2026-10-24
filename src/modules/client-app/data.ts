@@ -43,7 +43,8 @@ export async function resolveViewer(r: Repo, as?: string): Promise<Viewer> {
 
 // ---------- leitura ----------
 
-type Ctx = { r: Repo; b: ShopBundle; now: Date; today: string };
+/** rebook: "sugerir o próximo horário" (Recursos) ligado e em quantos dias, quando o histórico ainda não diz. */
+type Ctx = { r: Repo; b: ShopBundle; now: Date; today: string; rebook: { on: boolean; days: number } };
 
 function planFrom(b: ShopBundle, today: string, sub: { id: string; planId: string; periodEnd: string; usesInPeriod: number }): MyPlan | null {
   const plan = b.plans.find((p) => p.id === sub.planId);
@@ -83,7 +84,7 @@ async function rebookOffer(c: Ctx, all: MyAppointment[], history: MyAppointment[
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const base = live[0];
   if (!base || !base.serviceId || !c.b.services.some((s) => s.id === base.serviceId)) return null;
-  const cycle = visitCycleDays(history.filter((a) => a.status === "done").map((a) => a.day), 7);
+  const cycle = visitCycleDays(history.filter((a) => a.status === "done").map((a) => a.day), c.rebook.days);
   let start = addDays(base.day, cycle);
   if (start < c.today) start = c.today;
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
@@ -105,8 +106,9 @@ async function rebookOffer(c: Ctx, all: MyAppointment[], history: MyAppointment[
 }
 
 /** Tudo o que a tela Início/Meu plano precisa. `null` = sem login, ou logado mas ainda sem cadastro nesta barbearia. */
-export async function loadClientHome(r: Repo, b: ShopBundle, viewer: Viewer, now = new Date()): Promise<ClientHome | null> {
-  const c: Ctx = { r, b, now, today: dayInZone(now, b.shop.timezone) };
+export async function loadClientHome(r: Repo, b: ShopBundle, viewer: Viewer, now = new Date(),
+  rebook: { on: boolean; days: number } = { on: true, days: 7 }): Promise<ClientHome | null> {
+  const c: Ctx = { r, b, now, today: dayInZone(now, b.shop.timezone), rebook };
   if (viewer.kind === "guest") return null;
   return viewer.kind === "demo" ? demoHome(c, viewer.clientId) : supabaseHome(c, viewer.phone);
 }
@@ -117,7 +119,7 @@ async function demoHome(c: Ctx, clientId: string): Promise<ClientHome | null> {
   if (!client) return null;
   const tz = c.b.shop.timezone;
   const sub = s.subscriptions.find((x) => x.clientId === clientId && !x.cancelledAt);
-  const plan = sub ? planFrom(c.b, c.today, { id: sub.id, planId: sub.planId, periodEnd: dayInZone(sub.periodEnd, tz), usesInPeriod: sub.usesInPeriod }) : null;
+  const plan = sub && c.b.shop.modules.planos ? planFrom(c.b, c.today, { id: sub.id, planId: sub.planId, periodEnd: dayInZone(sub.periodEnd, tz), usesInPeriod: sub.usesInPeriod }) : null;
   const all = s.appointments.filter((x) => x.clientId === clientId).map((x) => apptFrom(c.b, { ...x, serviceName: { pt: x.serviceName } }));
   const { upcoming, history } = split(all, c.now);
   const me: ClientMe = { id: client.id, name: client.name, phone: client.phone, photoConsentAt: client.photoConsentAt?.toISOString() ?? null };
@@ -127,7 +129,7 @@ async function demoHome(c: Ctx, clientId: string): Promise<ClientHome | null> {
       .map((p): MyPayment => ({ id: p.id, amount: p.amount, method: p.method, status: p.status, at: (p.paidAt ?? new Date()).toISOString() }))
       .sort((a, b) => b.at.localeCompare(a.at)),
     projects: demoProjectsFor(clientId, c.today),
-    rebook: plan ? await rebookOffer(c, all, history) : null,
+    rebook: plan && c.rebook.on ? await rebookOffer(c, all, history) : null,
   };
 }
 
@@ -149,7 +151,7 @@ async function supabaseHome(c: Ctx, phone: string): Promise<ClientHome | null> {
       .order("created_at", { ascending: false }),
   ]);
   const sub = subs.data?.[0];
-  const plan = sub ? planFrom(c.b, c.today, { id: sub.id, planId: sub.plan_id, periodEnd: sub.period_end, usesInPeriod: sub.uses_in_period }) : null;
+  const plan = sub && c.b.shop.modules.planos ? planFrom(c.b, c.today, { id: sub.id, planId: sub.plan_id, periodEnd: sub.period_end, usesInPeriod: sub.uses_in_period }) : null;
   type A = { id: string; barber_id: string; service_id: string; starts_at: string; status: MyAppointment["status"]; price: number; subscription_id: string | null; services: { name: I18nText } | null };
   const all = ((appts.data ?? []) as unknown as A[]).map((x) => apptFrom(c.b, {
     id: x.id, startsAt: new Date(x.starts_at), barberId: x.barber_id, serviceId: x.service_id, serviceName: x.services?.name,
@@ -169,7 +171,7 @@ async function supabaseHome(c: Ctx, phone: string): Promise<ClientHome | null> {
     plan, upcoming, history: history.slice(0, 12),
     payments: (pays.data ?? []).map((p) => ({ id: p.id, amount: Number(p.amount), method: p.method, status: p.status, at: p.paid_at ?? p.created_at })),
     projects,
-    rebook: plan ? await rebookOffer(c, all, history) : null,
+    rebook: plan && c.rebook.on ? await rebookOffer(c, all, history) : null,
   };
 }
 
@@ -181,6 +183,10 @@ export interface BookAs { day: string; minutes: number; serviceId: string; barbe
 export async function bookAsViewer(b: ShopBundle, viewer: Viewer, p: BookAs) {
   const r = repo();
   const startsAt = atMinutes(p.day, p.minutes, b.shop.timezone);
+  // Só aceita um horário que a própria grade oferece (dentro do expediente, sem encaixe reservado, no intervalo da agenda).
+  // Sem isso, dava para marcar qualquer minuto mandando o pedido direto.
+  const grid = await daySlots(r, b, p.day, p.serviceId, p.barberId);
+  if (!grid.options.some((o) => o.time === p.minutes && o.barberIds.includes(p.barberId))) return { ok: false as const, error: "slot_taken" };
   if (viewer.kind !== "demo") {
     return r.book({ shopId: b.shop.id, barberId: p.barberId, serviceId: p.serviceId, name: p.name, phone: p.phone, startsAt });
   }
@@ -192,7 +198,7 @@ export async function bookAsViewer(b: ShopBundle, viewer: Viewer, p: BookAs) {
     const sub = s.subscriptions.find((x) => x.clientId === client.id && !x.cancelledAt);
     const plan = sub && b.plans.find((x) => x.id === sub.planId);
     const svc = b.services.find((x) => x.id === p.serviceId);
-    if (appt && sub && plan && svc && canUsePlan(sub, plan, svc, new Date()).ok) {
+    if (b.shop.modules.planos && appt && sub && plan && svc && canUsePlan(sub, plan, svc, new Date()).ok) {
       appt.subscriptionId = sub.id; appt.viaPlan = true; appt.price = 0;
     }
   }
@@ -222,6 +228,7 @@ export async function cancelAsViewer(viewer: Viewer, appointmentId: string): Pro
  */
 export async function startPlanPayment(b: ShopBundle, viewer: Viewer, method: "pix" | "card"): Promise<PayStart> {
   if (viewer.kind === "guest") return { ok: false, error: "not_logged_in" };
+  if (!b.shop.modules.planos) return { ok: false, error: "subscription_not_found" };
   if (viewer.kind === "demo") {
     const s = demoSeed();
     const sub = s.subscriptions.find((x) => x.clientId === viewer.clientId && !x.cancelledAt);
@@ -241,7 +248,7 @@ export async function startPlanPayment(b: ShopBundle, viewer: Viewer, method: "p
     s.payments.push({ id, clientId: viewer.clientId, subscriptionId: sub.id, appointmentId: null, amount: plan.price, method, status: "paid", paidAt });
     return { ok: true, mode: "demo", paymentId: id, periodEnd: dayInZone(sub.periodEnd, b.shop.timezone) };
   }
-  const home = await supabaseHome({ r: repo(), b, now: new Date(), today: dayInZone(new Date(), b.shop.timezone) }, viewer.phone);
+  const home = await supabaseHome({ r: repo(), b, now: new Date(), today: dayInZone(new Date(), b.shop.timezone), rebook: { on: false, days: 7 } }, viewer.phone);
   if (!home?.plan) return { ok: false, error: "subscription_not_found" };
   const db = await supabaseServer();
   const { data, error } = await db.rpc("start_plan_payment", { p_subscription: home.plan.subscriptionId, p_method: method });

@@ -15,6 +15,8 @@ export interface DayItem {
   status: ViewStatus;
   viaPlan: boolean;
   walkIn: boolean;
+  /** Horário de um colega que a pessoa não pode ver (só aparece como "Ocupado", sem nome). */
+  masked?: boolean;
 }
 
 export interface ReserveView {
@@ -38,6 +40,7 @@ export interface BarberView {
   id: string;
   name: string;
   color: string;
+  photo: string | null;
 }
 
 export interface ServiceView {

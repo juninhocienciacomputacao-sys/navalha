@@ -12,6 +12,7 @@ import { isLive, listAppointments, listQueue } from "@/modules/agenda/data";
 import { busyByBarber, dayHours, dayRange, openReserveBlocks, queueForecast, reservesFor, shortName } from "@/modules/agenda/plan";
 import AutoRefresh from "@/modules/agenda/AutoRefresh";
 import Clock from "./Clock";
+import { featureStates } from "@/modules/settings/data";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "TV da recepção · Navalha" };
@@ -36,6 +37,17 @@ export default async function Tv({ params }: { params: Promise<{ slug: string }>
         <div>
           <h1 className="text-4xl font-bold">Sem acesso</h1>
           <p className="mt-4 text-xl text-neutral-400">Esta conta não faz parte da equipe de {b.shop.name}. Entre com a conta da recepção.</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!b.shop.modules.tv) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-neutral-950 p-10 text-center text-white">
+        <div>
+          <h1 className="text-4xl font-bold">TV da recepção desligada</h1>
+          <p className="mt-4 text-xl text-neutral-400">O dono pode ligar em Painel → Recursos → Pacote e módulos.</p>
         </div>
       </main>
     );
@@ -69,7 +81,8 @@ export default async function Tv({ params }: { params: Promise<{ slug: string }>
   const url = await bookingUrl(slug);
   const shortUrl = url.replace(/^https?:\/\//, "");
   let qr: ReturnType<typeof qrSvgPath> | null = null;
-  try { qr = qrSvgPath(qrEncode(url)); } catch { qr = null; }
+  const qrOn = (await featureStates(b)).find((f) => f.key === "qr_checkin")?.enabled !== false;
+  if (qrOn) try { qr = qrSvgPath(qrEncode(url)); } catch { qr = null; }
 
   const noon = atMinutes(day, 12 * 60, tz);
   const dateLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "short", day: "numeric", month: "short" })
@@ -122,7 +135,7 @@ export default async function Tv({ params }: { params: Promise<{ slug: string }>
             </svg>
           )}
           <div className="max-w-[22vw]">
-            <p className="text-[0.85em] text-[#9fb0ba]">Aponte a câmera para agendar ou entrar na fila</p>
+            <p className="text-[0.85em] text-[#9fb0ba]">{qr ? "Aponte a câmera para agendar ou entrar na fila" : "Agende pelo app"}</p>
             <p className="truncate font-bold text-[#dcaa52]">{shortUrl}</p>
           </div>
         </div>
@@ -135,7 +148,10 @@ export default async function Tv({ params }: { params: Promise<{ slug: string }>
           return (
             <section key={br.id} className="flex min-h-0 flex-col gap-[0.45vw] overflow-hidden rounded-[0.9vw] bg-[#131e26] p-[0.8vw]">
               <h2 className="mb-[0.2vw] flex items-center gap-[0.55vw] text-[1.45em] font-bold text-white">
-                <span className="grid h-[2.1vw] w-[2.1vw] shrink-0 place-items-center rounded-full text-[0.6em] font-black text-[#0b1217]" style={{ background: br.color ?? "#9fb0ba" }}>{initials(br.name)}</span>
+                {br.photo
+                  // eslint-disable-next-line @next/next/no-img-element -- foto pequena guardada no banco (data URL)
+                  ? <img src={br.photo} alt="" className="h-[2.6vw] w-[2.6vw] shrink-0 rounded-full object-cover" style={{ boxShadow: `0 0 0 3px ${br.color ?? "#9fb0ba"}` }} />
+                  : <span className="grid h-[2.1vw] w-[2.1vw] shrink-0 place-items-center rounded-full text-[0.6em] font-black text-[#0b1217]" style={{ background: br.color ?? "#9fb0ba" }}>{initials(br.name)}</span>}
                 <span className="truncate">{br.name}</span>
               </h2>
               {rows.map((x) => (

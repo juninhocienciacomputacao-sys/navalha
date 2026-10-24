@@ -1,11 +1,26 @@
 -- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.
--- Não apaga nem altera dados. Pode rodar mais de uma vez.
+-- Não apaga dados (só cria colunas novas que faltarem). Pode rodar mais de uma vez.
 
 grant usage on schema public to anon, authenticated;
 
 grant select, insert, update, delete on all tables in schema public to anon, authenticated;
 
 grant usage, select on all sequences in schema public to anon, authenticated;
+
+alter table clients add column if not exists notes text;
+
+alter table barbers add column if not exists photo text
+  check (photo is null or (photo like 'data:image/%' and length(photo) <= 300000));
+
+alter table shops add column if not exists role_access jsonb not null default '{}'::jsonb;
+
+alter table shop_members add column if not exists phone_e164 text;
+
+alter table shop_members add column if not exists display_name text;
+
+alter table shop_members add column if not exists added_at timestamptz not null default now();
+
+alter table shops add column if not exists modules jsonb not null default '{}'::jsonb;
 
 create or replace function is_member(target uuid, roles member_role[] default null)
 returns boolean language sql stable security definer set search_path = public as $$
@@ -321,6 +336,179 @@ begin
   return null;
 end $$;
 
+create or replace function access_defaults()
+returns jsonb language sql immutable as $$
+  select '{"manager":{"sections":["painel","clientes","planos","financeiro","comissoes","equipe","servicos","mensagens","shopping","recursos"],"agenda":"all"},"reception":{"sections":["clientes","planos"],"agenda":"all"},"barber":{"sections":[],"agenda":"own_free"}}'::jsonb;
+$$;
+
+create or replace function my_access(target uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select case when m.role = 'owner'
+    then '{"role":"owner","agenda":"all","sections":["painel","clientes","planos","financeiro","comissoes","equipe","servicos","mensagens","shopping","recursos"]}'::jsonb
+    else (access_defaults() -> m.role::text) || coalesce(s.role_access -> m.role::text, '{}'::jsonb) || jsonb_build_object('role', m.role)
+  end
+  from shop_members m join shops s on s.id = m.shop_id
+  where m.shop_id = target and m.user_id = auth.uid();
+$$;
+
+create or replace function shops_guard_access()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.role_access is distinct from old.role_access and auth.uid() is not null
+     and not is_member(old.id, array['owner']::member_role[]) then
+    raise exception 'forbidden';
+  end if;
+  return new;
+end $$;
+
+create or replace function can_section(target uuid, section text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select (a -> 'sections') ? section from (select my_access(target) as a) x where a is not null), false);
+$$;
+
+create or replace function sees_barber(target uuid, p_barber uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((
+    select a ->> 'agenda' = 'all'
+        or exists (select 1 from barbers b where b.id = p_barber and b.shop_id = target and b.user_id = auth.uid())
+    from (select my_access(target) as a) x where a is not null
+  ), false);
+$$;
+
+create or replace function shop_members_fill_phone()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.phone_e164 is null and new.user_id = auth.uid() then new.phone_e164 := my_phone(); end if;
+  return new;
+end $$;
+
+create or replace function claim_staff_invites()
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  v_phone text := my_phone();
+  v_n int := 0;
+  r record;
+begin
+  if v_phone is null or auth.uid() is null then return 0; end if;
+  for r in select * from staff_invites where phone_e164 = v_phone loop
+    insert into shop_members (shop_id, user_id, role, phone_e164, display_name)
+    values (r.shop_id, auth.uid(), r.role, v_phone, r.display_name)
+    on conflict (shop_id, user_id) do update
+      set role = case when shop_members.role = 'owner' then 'owner'::member_role else excluded.role end,
+          phone_e164 = excluded.phone_e164,
+          display_name = coalesce(excluded.display_name, shop_members.display_name);
+    if r.barber_id is not null then
+      update barbers set user_id = null where shop_id = r.shop_id and user_id = auth.uid() and id <> r.barber_id;
+      update barbers set user_id = auth.uid() where id = r.barber_id and shop_id = r.shop_id;
+    end if;
+    delete from staff_invites where shop_id = r.shop_id and phone_e164 = v_phone;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end $$;
+
+create or replace function set_member_access(p_shop uuid, p_user uuid, p_role member_role, p_barber uuid default null)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not is_member(p_shop, array['owner']::member_role[]) then raise exception 'forbidden'; end if;
+  perform 1 from shop_members where shop_id = p_shop and user_id = p_user;
+  if not found then raise exception 'not_found'; end if;
+  if p_role <> 'owner' and not exists (
+    select 1 from shop_members where shop_id = p_shop and role = 'owner' and user_id <> p_user
+  ) then raise exception 'last_owner'; end if;
+  if p_barber is not null then
+    perform 1 from barbers where id = p_barber and shop_id = p_shop;
+    if not found then raise exception 'barber_not_found'; end if;
+  end if;
+  update shop_members set role = p_role where shop_id = p_shop and user_id = p_user;
+  update barbers set user_id = null where shop_id = p_shop and user_id = p_user and id is distinct from p_barber;
+  if p_barber is not null then update barbers set user_id = p_user where id = p_barber; end if;
+end $$;
+
+create or replace function remove_member(p_shop uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not is_member(p_shop, array['owner']::member_role[]) then raise exception 'forbidden'; end if;
+  if not exists (select 1 from shop_members where shop_id = p_shop and role = 'owner' and user_id <> p_user) then
+    raise exception 'last_owner';
+  end if;
+  update barbers set user_id = null where shop_id = p_shop and user_id = p_user;
+  delete from shop_members where shop_id = p_shop and user_id = p_user;
+end $$;
+
+create or replace function book_appointment(
+  p_shop uuid, p_barber uuid, p_service uuid, p_starts timestamptz,
+  p_name text default null, p_lang text default 'pt'
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_phone text := my_phone();
+  v_shop shops%rowtype;
+  v_client uuid;
+  v_service services%rowtype;
+  v_sub uuid;
+  v_id uuid;
+  v_local timestamp;
+  v_hours jsonb;
+  v_start int;
+  v_end int;
+begin
+  if v_phone is null then raise exception 'not_logged_in'; end if;
+  if p_starts < now() then raise exception 'slot_in_past'; end if;
+
+  select * into v_shop from shops where id = p_shop;
+  if not found then raise exception 'shop_not_found'; end if;
+  select * into v_service from services where id = p_service and shop_id = p_shop and active;
+  if not found then raise exception 'service_not_found'; end if;
+  perform 1 from barbers where id = p_barber and shop_id = p_shop and active;
+  if not found then raise exception 'barber_not_found'; end if;
+
+  v_local := p_starts at time zone v_shop.timezone;
+  v_hours := v_shop.opening_hours -> (extract(dow from v_local)::int)::text;
+  v_start := extract(hour from v_local)::int * 60 + extract(minute from v_local)::int;
+  v_end := v_start + v_service.duration_min;
+  if v_hours is null
+     or v_start < split_part(v_hours ->> 'open', ':', 1)::int * 60 + split_part(v_hours ->> 'open', ':', 2)::int
+     or v_end > split_part(v_hours ->> 'close', ':', 1)::int * 60 + split_part(v_hours ->> 'close', ':', 2)::int then
+    raise exception 'slot_taken';
+  end if;
+
+  insert into clients (shop_id, phone_e164, name, lang)
+  values (p_shop, v_phone, coalesce(nullif(trim(p_name), ''), 'Cliente'), coalesce(p_lang, 'pt'))
+  on conflict (shop_id, phone_e164) do update
+    set name = coalesce(nullif(trim(excluded.name), ''), clients.name)
+  returning id into v_client;
+
+  -- plano ativo no dia do horário, que cobre o serviço e ainda tem uso (o preço fica 0 e a visita entra no rateio da comissão)
+  if coalesce(v_shop.modules ->> 'planos', 'true') <> 'false' then
+    select s.id into v_sub
+    from subscriptions s
+    join plan_services ps on ps.plan_id = s.plan_id and ps.service_id = p_service
+    join plans pl on pl.id = s.plan_id
+    where s.client_id = v_client and s.cancelled_at is null
+      and v_local::date between s.period_start and s.period_end
+      and (pl.quota_uses is null or s.uses_in_period < pl.quota_uses)
+    limit 1;
+  end if;
+
+  begin
+    insert into appointments (shop_id, barber_id, client_id, service_id, starts_at, ends_at, source, subscription_id, price)
+    values (p_shop, p_barber, v_client, p_service, p_starts,
+            p_starts + make_interval(mins => v_service.duration_min), 'app', v_sub,
+            case when v_sub is null then v_service.price else 0 end)
+    returning id into v_id;
+  exception when exclusion_violation then
+    raise exception 'slot_taken';
+  end;
+  return v_id;
+end $$;
+
+drop policy if exists owner_write on shops;
+create policy owner_write on shops for update using (can_section(id, 'recursos'));
+
+drop policy if exists public_client_flags on shop_features;
+create policy public_client_flags on shop_features for select using (key in ('rebook'));
+
 revoke all on function book_appointment(uuid, uuid, uuid, timestamptz, text, text) from public;
 
 revoke all on function cancel_my_appointment(uuid) from public;
@@ -355,6 +543,38 @@ revoke all on function set_payment_provider_ref(uuid, text, text) from public, a
 
 revoke all on function fail_plan_payment(uuid) from public, anon, authenticated;
 
+revoke all on function claim_staff_invites() from public;
+
+revoke all on function set_member_access(uuid, uuid, member_role, uuid) from public;
+
+revoke all on function remove_member(uuid, uuid) from public;
+
+grant execute on function claim_staff_invites() to authenticated;
+
+grant execute on function set_member_access(uuid, uuid, member_role, uuid) to authenticated;
+
+grant execute on function remove_member(uuid, uuid) to authenticated;
+
+grant execute on function my_access(uuid) to authenticated;
+
+grant execute on function can_section(uuid, text) to authenticated;
+
+grant execute on function sees_barber(uuid, uuid) to authenticated;
+
+revoke all on function insert_default_message_templates(uuid) from public, anon, authenticated;
+
+revoke all on function refresh_plan_uses(uuid) from public, anon, authenticated;
+
+revoke all on function book_appointment(uuid, uuid, uuid, timestamptz, text, text) from public, anon;
+
+revoke all on function cancel_my_appointment(uuid) from public, anon;
+
+revoke all on function create_shop(text, text, text, text, text) from public, anon;
+
+revoke all on function book_appointment(uuid, uuid, uuid, timestamptz, text, text) from public, anon;
+
+grant execute on function book_appointment(uuid, uuid, uuid, timestamptz, text, text) to authenticated;
+
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
@@ -377,6 +597,14 @@ drop trigger if exists subscriptions_period_changed on subscriptions;
 create trigger subscriptions_period_changed
 after update of period_start, period_end on subscriptions
 for each row execute function subscriptions_period_changed();
+
+drop trigger if exists shops_guard_access on shops;
+create trigger shops_guard_access before update on shops
+  for each row execute function shops_guard_access();
+
+drop trigger if exists shop_members_fill_phone on shop_members;
+create trigger shop_members_fill_phone before insert on shop_members
+  for each row execute function shop_members_fill_phone();
 
 -- barbearias já cadastradas
 do $$

@@ -85,7 +85,11 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
           </div>
         </div>
         <p className="mx-auto mt-4 max-w-xs text-sm text-neutral-500">
-          {fill(L.bookedMsg, { service: tx(service.name, lang), barber: b.name, day: dl(done.day), time: toHHMM(done.minutes) })}
+          {(() => {
+            const msg = fill(L.bookedMsg, { service: tx(service.name, lang), barber: b.name, day: dl(done.day), time: toHHMM(done.minutes) });
+            // sem o módulo de lembretes, não promete mensagem no WhatsApp (tira a última frase)
+            return shop.modules.mensagens ? msg : msg.slice(0, msg.lastIndexOf(". ") + 1) || msg;
+          })()}
         </p>
         <div className="mt-6 space-y-2">
           <BigButton onClick={onHome}>{L.back_home}</BigButton>

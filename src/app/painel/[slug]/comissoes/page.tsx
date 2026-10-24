@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { formatMoney } from "@/core/money";
 import { dayInZone } from "@/core/time";
 import { planVisitValue, type CommissionLine } from "@/core/commission";
@@ -28,8 +28,7 @@ export default async function Comissoes({ params, searchParams }: {
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { bundle: b, role } = await requireStaff(slug);
-  if (role !== "owner" && role !== "manager") return <NoAccess />;
+  const { bundle: b } = await requireSection(slug, "comissoes");
   const { shop } = b;
   const today = dayInZone(new Date(), shop.timezone);
 
@@ -210,11 +209,3 @@ function BarberCard({ x, tz, slug, kind, range, money, svcName, rules, planModel
   );
 }
 
-function NoAccess() {
-  return (
-    <main className="mx-auto max-w-md px-6 py-20 text-center">
-      <h1 className="text-xl font-semibold">Só o dono ou o gerente</h1>
-      <p className="mt-2 text-sm text-neutral-500">Comissões e dinheiro da barbearia ficam visíveis só para o dono e o gerente.</p>
-    </main>
-  );
-}

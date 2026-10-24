@@ -8,7 +8,7 @@ import type { Lang } from "@/core/types";
 import type { PayoutPeriod } from "@/core/finance";
 import { saveRulesAction } from "./actions";
 import { Choice, PresetNumber, SelectList, Stepper, Toggle } from "@/components/pick";
-import { PERCENT_STEPS, priceSteps, suggest } from "@/core/presets";
+import { PERCENT_STEPS, suggest } from "@/core/presets";
 
 const PRODUCT_PCT = [0, 5, 10, 15, 20, 25, 30];
 const SALE_BONUS_PCT = [0, 5, 10, 15, 20, 25, 30, 50];
