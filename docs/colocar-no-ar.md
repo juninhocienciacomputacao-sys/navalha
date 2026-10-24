@@ -69,7 +69,7 @@ Daqui em diante o painel só abre para a equipe da barbearia, e o cliente confir
 Para o banco que já está no ar, rode a atualização uma vez (não apaga nada):
 
 1. No Supabase, abra **SQL Editor → New query**.
-2. Copie todo o conteúdo de `supabase/migrations/0011_team_access.sql` (no GitHub, botão "Copy raw file"), cole e clique em **Run**. Pode rodar de novo sem problema.
+2. Copie todo o conteúdo de `supabase/migrations/0012_team_access.sql` (no GitHub, botão "Copy raw file"), cole e clique em **Run**. Pode rodar de novo sem problema.
 
 Depois, no painel, entre como dono e abra **Acessos**:
 

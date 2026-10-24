@@ -43,7 +43,7 @@ describe("níveis de acesso", () => {
   });
 
   it("o padrão do banco (access_defaults) é igual ao do app", () => {
-    const sql = fs.readFileSync("supabase/migrations/0011_team_access.sql", "utf8");
+    const sql = fs.readFileSync("supabase/migrations/0012_team_access.sql", "utf8");
     const json = sql.match(/create or replace function access_defaults\(\)[\s\S]*?select '(\{.*?\})'::jsonb/)?.[1];
     expect(json).toBeTruthy();
     expect(JSON.parse(json!)).toEqual(DEFAULT_ACCESS);

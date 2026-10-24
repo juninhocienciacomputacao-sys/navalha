@@ -1,6 +1,6 @@
 // Níveis de acesso da equipe: o que cada nível vê no painel e quanto da agenda enxerga.
 // O dono sempre vê tudo. Os outros níveis seguem o que o dono escolheu (ou o padrão abaixo).
-// O banco repete o mesmo padrão em access_defaults() (migração 0011); um teste confere que os dois batem.
+// O banco repete o mesmo padrão em access_defaults() (migração 0012); um teste confere que os dois batem.
 
 export type StaffRole = "owner" | "manager" | "reception" | "barber";
 export type Level = Exclude<StaffRole, "owner">;

@@ -898,7 +898,7 @@ create trigger subscriptions_period_changed
 after update of period_start, period_end on subscriptions
 for each row execute function subscriptions_period_changed();
 
--- ===== 0011_team_access.sql =====
+-- ===== 0012_team_access.sql =====
 -- Níveis de acesso da equipe (dono, gerente, recepção, barbeiro), configuráveis pelo dono.
 -- Pode rodar mais de uma vez: cola no SQL Editor do Supabase e clica em Run.
 
