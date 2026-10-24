@@ -169,6 +169,11 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
       )}
 
       <Label>Serviço</Label>
+      {services.length === 0 && (
+        <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          Nenhum serviço cadastrado ainda. Cadastre em <a className="font-semibold underline" href={`/painel/${slug}/servicos`}>Serviços</a> (o “Começar rápido” adiciona os mais comuns de uma vez) e volte aqui.
+        </p>
+      )}
       <div className="flex flex-wrap gap-1.5">
         {services.map((s) => (
           <button key={s.id} className={`chip px-3 py-1.5 ${serviceId === s.id ? "chip-on" : ""}`} onClick={() => setServiceId(s.id)}>
@@ -190,6 +195,7 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
       <DayPicker today={today} value={day} onChange={setDay} />
 
       <Label>Horário</Label>
+      {!serviceId && <p className="text-sm text-neutral-500">Escolha um serviço para ver os horários livres.</p>}
       {serviceId && barberId && <TimePicker slug={slug} day={day} serviceId={serviceId} barberId={barberId} value={minutes} onChange={setMinutes} />}
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
