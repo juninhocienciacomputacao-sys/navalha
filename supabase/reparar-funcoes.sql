@@ -1,5 +1,5 @@
 -- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.
--- Não apaga nem altera dados. Pode rodar mais de uma vez.
+-- Não apaga dados (só cria colunas novas que faltarem). Pode rodar mais de uma vez.
 
 grant usage on schema public to anon, authenticated;
 
@@ -8,6 +8,9 @@ grant select, insert, update, delete on all tables in schema public to anon, aut
 grant usage, select on all sequences in schema public to anon, authenticated;
 
 alter table clients add column if not exists notes text;
+
+alter table barbers add column if not exists photo text
+  check (photo is null or (photo like 'data:image/%' and length(photo) <= 300000));
 
 alter table shops add column if not exists modules jsonb not null default '{}'::jsonb;
 

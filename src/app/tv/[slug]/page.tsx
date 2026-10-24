@@ -148,7 +148,10 @@ export default async function Tv({ params }: { params: Promise<{ slug: string }>
           return (
             <section key={br.id} className="flex min-h-0 flex-col gap-[0.45vw] overflow-hidden rounded-[0.9vw] bg-[#131e26] p-[0.8vw]">
               <h2 className="mb-[0.2vw] flex items-center gap-[0.55vw] text-[1.45em] font-bold text-white">
-                <span className="grid h-[2.1vw] w-[2.1vw] shrink-0 place-items-center rounded-full text-[0.6em] font-black text-[#0b1217]" style={{ background: br.color ?? "#9fb0ba" }}>{initials(br.name)}</span>
+                {br.photo
+                  // eslint-disable-next-line @next/next/no-img-element -- foto pequena guardada no banco (data URL)
+                  ? <img src={br.photo} alt="" className="h-[2.6vw] w-[2.6vw] shrink-0 rounded-full object-cover" style={{ boxShadow: `0 0 0 3px ${br.color ?? "#9fb0ba"}` }} />
+                  : <span className="grid h-[2.1vw] w-[2.1vw] shrink-0 place-items-center rounded-full text-[0.6em] font-black text-[#0b1217]" style={{ background: br.color ?? "#9fb0ba" }}>{initials(br.name)}</span>}
                 <span className="truncate">{br.name}</span>
               </h2>
               {rows.map((x) => (

@@ -1,5 +1,6 @@
 "use client";
 
+import { BarberFace } from "@/components/BarberFace";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toHHMM } from "@/core/types";
@@ -81,7 +82,7 @@ export default function DayBoard({ slug, tz, today, day, open, close, step, barb
             return (
               <div key={b.id} className="min-w-[150px] flex-1 border-l border-neutral-100 dark:border-neutral-800">
                 <div className="sticky top-0 flex items-center gap-2 border-b border-neutral-100 px-2 dark:border-neutral-800" style={{ height: HEAD }}>
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold text-white" style={{ background: b.color }}>{b.name.slice(0, 1)}</span>
+                  <BarberFace name={b.name} color={b.color} photo={b.photo} className="h-7 w-7 text-xs" />
                   <span className="leading-tight"><b className="text-sm">{b.name}</b><br /><span className="text-[11px] text-neutral-500">{count} atendimento(s)</span></span>
                 </div>
                 <div className="relative cursor-cell" style={{

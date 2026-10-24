@@ -9,12 +9,13 @@ import type { TeamBarber } from "@/modules/settings/data";
 import { Choice, ColorChoice, PresetNumber, PresetText, Stepper } from "@/components/pick";
 import { BARBER_COLORS, BARBER_ROLE_PRESETS, GOAL_PRESETS, moneyStep, PERCENT_STEPS, priceSteps, suggest } from "@/core/presets";
 import { BarChart, LineChart } from "@/modules/settings/charts";
+import { BarberFace } from "@/components/BarberFace";
+import { PhotoPicker } from "./PhotoPicker";
 import { saveBarberAction, setBarberActiveAction } from "./actions";
 
 type MetricKey = "appointments" | "revenue" | "hours" | "avgTicket" | "occupancy" | "noShowRate";
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
-const initials = (s: string) => s.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]!.toUpperCase()).join("");
 const shortDate = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 const FALLBACK = "#737373";
 
@@ -84,7 +85,7 @@ export default function Team({ slug, currency, lang, canEdit, barbers, stats, mo
           return (
             <div key={b.id} className="card flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-bold text-white" style={{ background: b.color ?? FALLBACK }}>{initials(b.name)}</span>
+                <BarberFace name={b.name} color={b.color} photo={b.photo} className="h-12 w-12 text-sm" fallback={FALLBACK} />
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{b.name}</p>
                   <p className="truncate text-xs text-neutral-500">{b.roleTitle || "Sem especialidade"}</p>
@@ -262,6 +263,7 @@ function BarberForm({ initial, nextSort, pending, error, currency, lang, onSave,
   const [name, setName] = useState(initial?.name ?? "");
   const [roleTitle, setRoleTitle] = useState(initial?.roleTitle ?? "");
   const [color, setColor] = useState(initial?.color ?? BARBER_COLORS[nextSort % BARBER_COLORS.length]!);
+  const [photo, setPhoto] = useState<string | null>(initial?.photo ?? null);
   const [pay, setPay] = useState<"commission" | "chair_rent">(initial?.pay ?? "commission");
   const [commissionPct, setPct] = useState<number | null>(initial?.commissionPct ?? 40);
   const [chairRent, setRent] = useState<number | null>(initial?.chairRent || null);
@@ -280,7 +282,7 @@ function BarberForm({ initial, nextSort, pending, error, currency, lang, onSave,
       setLocalError("");
       if (pay === "chair_rent" && chairRent == null) return setLocalError("Escolha o valor do aluguel.");
       onSave({
-        id: initial?.id, name, roleTitle, color, pay,
+        id: initial?.id, name, roleTitle, color, photo, pay,
         commissionPct: commissionPct ?? 0, chairRent: chairRent ?? 0, monthlyGoal, sort,
       });
     }}>
@@ -288,6 +290,10 @@ function BarberForm({ initial, nextSort, pending, error, currency, lang, onSave,
       <label className="block max-w-sm text-sm font-medium">Nome
         <input className="input mt-1" required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Rafa" />
       </label>
+      <fieldset className="min-w-0"><legend className={label}>Foto</legend>
+        <PhotoPicker name={name || "Barbeiro"} color={color} value={photo} onChange={setPhoto} onError={setLocalError} />
+        <p className="mt-1 text-xs text-neutral-500">Aparece na agenda, na TV da recepção e no app do cliente, na hora de escolher o profissional.</p>
+      </fieldset>
       <fieldset className="min-w-0"><legend className={label}>Especialidade</legend>
         <PresetText name="Especialidade" presets={BARBER_ROLE_PRESETS} value={roleTitle} onChange={setRoleTitle} otherPlaceholder="Especialidade" />
         {roleTitle && <button type="button" className="mt-1 text-xs text-neutral-500 underline" onClick={() => setRoleTitle("")}>sem especialidade</button>}

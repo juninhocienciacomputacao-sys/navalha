@@ -12,6 +12,7 @@ const barberSchema = z.object({
   name: z.string().trim().min(1, "Informe o nome").max(60),
   roleTitle: z.string().trim().max(80).transform((s) => s || null).nullable(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida").nullable(),
+  photo: z.string().max(300_000, "Foto grande demais").regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/, "Foto inválida").nullable().default(null),
   pay: z.enum(["commission", "chair_rent"]),
   commissionPct: z.number().min(0, "Comissão entre 0 e 100%").max(100, "Comissão entre 0 e 100%"),
   chairRent: z.number().min(0, "Aluguel não pode ser negativo").max(1_000_000),

@@ -113,5 +113,5 @@ export function toQueueViews(b: ShopBundle, queue: QueueEntry[], forecast: (Walk
   }));
 }
 
-export const toBarberViews = (b: ShopBundle): BarberView[] => b.barbers.map((x) => ({ id: x.id, name: x.name, color: x.color ?? "#525252" }));
+export const toBarberViews = (b: ShopBundle): BarberView[] => b.barbers.map((x) => ({ id: x.id, name: x.name, color: x.color ?? "#525252", photo: x.photo }));
 export const toServiceViews = (b: ShopBundle): ServiceView[] => b.services.map((s) => ({ id: s.id, name: s.name.pt, durationMin: s.durationMin }));

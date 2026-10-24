@@ -38,6 +38,7 @@ export interface BarberView {
   id: string;
   name: string;
   color: string;
+  photo: string | null;
 }
 
 export interface ServiceView {
