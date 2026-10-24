@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { repo } from "@/data";
 import { currentUser, supabaseServer } from "./supabase";
 
@@ -13,7 +13,8 @@ export type StaffRole = "owner" | "manager" | "reception" | "barber";
 export const requireStaff = cache(async (slug: string) => {
   const r = repo();
   const bundle = await r.shopBySlug(slug);
-  if (!bundle) notFound();
+  // Barbearia que não existe (ex.: o link antigo da demonstração): volta para a lista de barbearias de quem entrou.
+  if (!bundle) redirect("/painel");
   if (r.mode === "demo") return { r, bundle, role: "owner" as StaffRole, allowed: true };
   const user = await currentUser();
   if (!user) redirect(`/entrar?next=/painel/${slug}`);
