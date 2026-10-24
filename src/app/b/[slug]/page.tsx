@@ -27,6 +27,8 @@ export default async function Page({ params, searchParams }: {
   const bundle = await r.shopBySlug(slug);
   if (!bundle) notFound();
   const lang = asLang(q.lang, bundle.shop.defaultLang);
+  // Barbearia recém-cadastrada, ainda sem serviço ou sem barbeiro: não dá para agendar.
+  if (!bundle.services.length || !bundle.barbers.length) return <EmPreparo name={bundle.shop.name} lang={lang} />;
   const now = new Date();
   const today = dayInZone(now, bundle.shop.timezone);
   const viewer = await resolveViewer(r, q.as);
@@ -42,5 +44,23 @@ export default async function Page({ params, searchParams }: {
       bundle={bundle} lang={lang} today={today} initial={initial} viewer={viewer} home={home} catalog={catalog} initialTab={tab}
       hour={Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: bundle.shop.timezone }).format(now))}
     />
+  );
+}
+
+const PREPARO = {
+  pt: ["está preparando a agenda online.", "Volte em breve para agendar seu horário."],
+  en: ["is setting up online booking.", "Come back soon to book your visit."],
+  es: ["está preparando la agenda en línea.", "Vuelve pronto para reservar tu turno."],
+} as const;
+
+function EmPreparo({ name, lang }: { name: string; lang: keyof typeof PREPARO }) {
+  const [a, b] = PREPARO[lang] ?? PREPARO.pt;
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-2 px-6 text-center">
+      <p className="text-4xl">💈</p>
+      <h1 className="text-2xl font-bold">{name}</h1>
+      <p className="text-neutral-600 dark:text-neutral-300">{a}</p>
+      <p className="text-sm text-neutral-500">{b}</p>
+    </main>
   );
 }
