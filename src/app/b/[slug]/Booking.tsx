@@ -8,7 +8,9 @@ import { toHHMM } from "@/core/types";
 import { addDays, weekday } from "@/core/time";
 import { formatMoney } from "@/core/money";
 import { fill, locale, t, tx } from "@/i18n";
-import type { MyPlan } from "@/modules/client-app/types";
+import type { MyAppointment, MyPlan } from "@/modules/client-app/types";
+import { checkBookingLimit, checkPlanUse, hasUseRules, nextUseDay, type BookingLimit, type PlanCheck } from "@/core/plan-rules";
+import { blockReason, ruleLines } from "@/modules/plans/describe";
 import { confirmBooking, loadSlots } from "./actions";
 import { Avatar, BigButton, Icon, Label, dayLabel } from "./ui";
 
@@ -16,9 +18,10 @@ type Pick = { minutes: number; barberId: string } | null;
 export type BookPreset = { serviceId?: string; barberId?: string; day?: string };
 
 /** Agendar: serviço → profissional → dia → horário (com nome do barbeiro) → sugestões de outro barbeiro → confirmar. */
-export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn, defaultName, plan, preset, onHome }: {
+export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn, defaultName, plan, preset, onHome, limit, upcoming }: {
   bundle: ShopBundle; lang: Lang; today: string; initial: DaySlots; demoAs?: string; loggedIn: boolean;
   defaultName?: string; plan: MyPlan | null; preset?: BookPreset | null; onHome: () => void;
+  limit: BookingLimit; upcoming: MyAppointment[];
 }) {
   const { shop, barbers, services } = bundle;
   const L = t(lang);
@@ -38,6 +41,23 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
   const inPlan = (sid: string) => Boolean(plan && plan.status !== "expired" && plan.serviceIds.includes(sid));
   const priceOf = (sid: string) => inPlan(sid) ? L.in_plan : formatMoney(services.find((s) => s.id === sid)!.price, shop.currency, lang);
   const dl = (d: string) => dayLabel(d, today, lang, L);
+  const barberName = (id: string) => barbers.find((b) => b.id === id)?.name;
+
+  // ---- regras do plano: este horário sai pelo plano, é cobrado avulso ou não pode? ----
+  const planObj = plan && bundle.plans.find((p) => p.id === plan.planId);
+  const planCheck = (m: number, b: string, d = day): PlanCheck | null => plan && planObj && plan.status !== "expired" && plan.serviceIds.includes(serviceId)
+    ? checkPlanUse({ plan: planObj, covers: true, periodEnd: plan.periodEnd, usesInPeriod: plan.usesInPeriod, useDays: plan.useDays }, { day: d, start: m, barberId: b })
+    : null;
+  const showCover = Boolean(plan && planObj && plan.status !== "expired" && plan.serviceIds.includes(serviceId) && (hasUseRules(plan.rules) || plan.quotaUses !== null));
+  const covers = (m: number, b: string) => showCover && planCheck(m, b)?.ok === true;
+
+  // ---- limite de horários em aberto do cliente ----
+  const openAppts = upcoming.map((a) => {
+    const svc = services.find((x) => x.id === a.serviceId);
+    return { day: a.day, start: a.minutes, end: a.minutes + (svc?.durationMin ?? 30), appt: a };
+  });
+  const full = limit.on && openAppts.length >= limit.maxUpcoming;
+  const limitFor = (m: number) => checkBookingLimit(limit, openAppts, { day, start: m, end: m + service.durationMin });
 
   function refresh(next: { serviceId?: string; barberId?: string | null; day?: string }) {
     const s = next.serviceId ?? serviceId;
@@ -100,12 +120,17 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
   }
 
   const chosen = (m: number, b: string) => pick?.minutes === m && pick.barberId === b;
+  const pickCheck = pick ? planCheck(pick.minutes, pick.barberId) : null;
+  const pickLimit = pick && loggedIn ? limitFor(pick.minutes) : null;
+  const blocked = Boolean((pickCheck && !pickCheck.ok && pickCheck.block) || (pickLimit && !pickLimit.ok));
   const SlotBtn = ({ m, b, showName }: { m: number; b: string; showName: boolean }) => (
     <button
       onClick={() => setPick({ minutes: m, barberId: b })}
-      className={`rounded-xl border px-2 py-2 text-left text-sm transition ${chosen(m, b)
-        ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-200 bg-white hover:border-amber-400 dark:border-neutral-700 dark:bg-neutral-900"}`}
+      className={`relative rounded-xl border px-2 py-2 text-left text-sm transition ${chosen(m, b)
+        ? "border-amber-500 bg-amber-500 text-neutral-950" : covers(m, b) ? "border-emerald-500/60 bg-emerald-50 hover:border-emerald-500 dark:bg-emerald-950/30"
+          : "border-neutral-200 bg-white hover:border-amber-400 dark:border-neutral-700 dark:bg-neutral-900"}`}
     >
+      {covers(m, b) && !chosen(m, b) && <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-emerald-500" />}
       <span className="font-semibold tabular-nums">{toHHMM(m)}</span>
       {showName && <span className="block truncate text-xs opacity-80">{barber(b).name}</span>}
     </button>
@@ -114,6 +139,28 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
   return (
     <div className="pb-4">
       <h1 className="text-2xl font-bold tracking-tight">{L.tab_book}</h1>
+
+      {full && openAppts[0] && (
+        <div className="mt-4 rounded-3xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-4 dark:border-amber-800 dark:from-amber-950/40 dark:to-neutral-950">
+          <p className="flex items-center gap-2 font-semibold"><Icon name="lock" className="size-4 text-amber-600" />{L.limit_t}</p>
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+            {fill(L.limit_sub, { w: `${dl(openAppts[0].day)} ${L.at} ${toHHMM(openAppts[0].start)}`, b: barberName(openAppts[0].appt.barberId) ?? "", n: String(limit.maxUpcoming) })}
+          </p>
+          <button onClick={onHome} className="mt-3 rounded-xl bg-neutral-900 px-3 py-2 text-sm font-semibold text-white dark:bg-white dark:text-neutral-950">{L.see_mine}</button>
+        </div>
+      )}
+
+      {plan && planObj && plan.status !== "expired" && hasUseRules(plan.rules) && (
+        <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-50/70 p-3 text-sm dark:bg-emerald-950/20">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400"><Icon name="shield" className="size-3.5" />{L.plan_rules_t} · {plan.planName}</p>
+          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+            {ruleLines(plan.rules, lang, barberName).map((l) => <li key={l} className="rounded-full bg-white px-2 py-0.5 text-xs dark:bg-neutral-900">{l}</li>)}
+          </ul>
+          {plan.rules.minDaysBetween && nextUseDay(planObj, plan.useDays, today) > today && (
+            <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-400">{fill(L.plan_next_use, { d: dl(nextUseDay(planObj, plan.useDays, today)) })}</p>
+          )}
+        </div>
+      )}
 
       <Label>{L.service}</Label>
       <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1">
@@ -162,6 +209,7 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
       </div>
 
       <Label>{L.time} · <span className="normal-case">{dl(day)}</span></Label>
+      {showCover && !slots.closed && <p className="-mt-1 mb-2 flex items-center gap-1.5 text-xs text-neutral-500"><span className="size-2 rounded-full bg-emerald-500" />{L.plan_dot}</p>}
       <div className={pending ? "opacity-50 transition" : "transition"}>
         {slots.closed ? <p className="text-sm text-neutral-500">{L.closed}</p>
           : barberId && slots.preferred ? (
@@ -187,7 +235,8 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
                   <div className="flex flex-wrap gap-1.5">
                     {o.barberIds.map((b) => (
                       <button key={b} onClick={() => setPick({ minutes: o.time, barberId: b })}
-                        className={`inline-flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-xs ${chosen(o.time, b) ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"}`}>
+                        className={`inline-flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-xs ${chosen(o.time, b) ? "border-amber-500 bg-amber-500 text-neutral-950"
+                          : covers(o.time, b) ? "border-emerald-500/60 bg-emerald-50 dark:bg-emerald-950/30" : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"}`}>
                         <Avatar b={barber(b)} size="size-5 text-[8px]" />{barber(b).name}
                       </button>
                     ))}
@@ -200,16 +249,27 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
 
       {pick && (
         <div className="sticky bottom-20 z-10 -mx-4 mt-6 border-t border-neutral-200 bg-white/95 p-4 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95">
-          <p className="mb-3 text-sm">
+          <p className="mb-2 text-sm">
             <b>{tx(service.name, lang)}</b> {L.with} <b>{barber(pick.barberId).name}</b> · <span className="capitalize">{dl(day)}</span> {toHHMM(pick.minutes)}
-            <span className="ml-1 text-neutral-500">· {priceOf(serviceId)}</span>
+            <span className="ml-1 text-neutral-500">· {pickCheck && !pickCheck.ok ? formatMoney(service.price, shop.currency, lang) : priceOf(serviceId)}</span>
           </p>
+          {pickCheck?.ok && showCover && <p className="mb-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400"><Icon name="check" className="size-3.5" />{L.plan_here}</p>}
+          {pickCheck && !pickCheck.ok && plan && (
+            <p className={`mb-2 rounded-xl p-2 text-xs ${pickCheck.block ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300" : "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"}`}>
+              {pickCheck.block
+                ? fill(L.plan_out_block, { r: blockReason(pickCheck.reason, plan.rules, lang, barberName, pickCheck.nextDay) })
+                : `${fill(L.plan_out_charge, { r: blockReason(pickCheck.reason, plan.rules, lang, barberName, pickCheck.nextDay) })}: ${formatMoney(service.price, shop.currency, lang)}.`}
+            </p>
+          )}
+          {pickLimit && !pickLimit.ok && (
+            <p className="mb-2 rounded-xl bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">{L[`booking_limit_${pickLimit.reason}`]}</p>
+          )}
           {loggedIn && !defaultName && (
             <input className="input" placeholder={L.yourName} value={name} onChange={(e) => setName(e.target.value)} />
           )}
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           {loggedIn
-            ? <BigButton gold className="mt-3" disabled={pending || !(name.trim() || defaultName)} onClick={confirm}>{L.confirm}</BigButton>
+            ? <BigButton gold className="mt-3" disabled={pending || !(name.trim() || defaultName) || blocked} onClick={confirm}>{L.confirm}</BigButton>
             : <a className="mt-3 block w-full rounded-2xl bg-neutral-900 px-4 py-3.5 text-center text-[15px] font-semibold text-white dark:bg-white dark:text-neutral-950" href={`/entrar?next=${encodeURIComponent(`/b/${shop.slug}?lang=${lang}&tab=book`)}`}>{L.loginNeeded}</a>}
         </div>
       )}

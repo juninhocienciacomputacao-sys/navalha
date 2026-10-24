@@ -212,7 +212,7 @@ function SellPlan({ slug, plans, barbers, clients, currency, lang, busy, initial
       </div>
       <fieldset className="min-w-0 text-sm"><legend className={label}>Plano</legend>
         <Choice name="Plano" value={planId} onChange={setPlanId}
-          options={plans.map((p) => ({ value: p.id, label: p.name, hint: formatMoney(p.price, currency, lang) }))} />
+          options={plans.map((p) => ({ value: p.id, label: p.rules.exclusive ? `✦ ${p.name}` : p.name, hint: formatMoney(p.price, currency, lang) }))} />
       </fieldset>
       <fieldset className="min-w-0 text-sm"><legend className={label}>Quem vendeu</legend>
         <Choice name="Quem vendeu" value={barberId} onChange={setBarberId}

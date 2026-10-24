@@ -1,6 +1,7 @@
 // Tipos do app do cliente. Tudo serializável (datas como texto ISO / AAAA-MM-DD) para ir do servidor para a tela.
 import type { I18nText } from "@/core/types";
 import type { SubscriptionStatus } from "@/core/plans";
+import type { PlanRules } from "@/core/plan-rules";
 
 export interface ClientMe {
   id: string;
@@ -23,6 +24,10 @@ export interface MyPlan {
   status: SubscriptionStatus;
   /** Serviços que o plano cobre. */
   serviceIds: string[];
+  /** Regras de uso do plano (intervalo, dias, horário, barbeiros). */
+  rules: PlanRules;
+  /** Dias (AAAA-MM-DD) em que o plano já foi ou vai ser usado (sem cancelados e faltas), para o intervalo mínimo. */
+  useDays: string[];
 }
 
 export interface MyAppointment {

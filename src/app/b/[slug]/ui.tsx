@@ -78,17 +78,21 @@ export function PlanCard({ plan, bundle, lang, L, onPay }: { plan: MyPlan; bundl
   const dueText = exp ? fill(L.expired_ago, { n: String(-left) })
     : left === 0 ? L.expires_today : left === 1 ? L.expires_tomorrow : fill(L.expires_in, { n: String(left), d: shortDate(plan.periodEnd, lang) });
   return (
-    <div className={`relative overflow-hidden rounded-3xl p-5 text-white shadow-lg ${exp
+    <div className={`member-card relative overflow-hidden rounded-3xl p-5 text-white shadow-lg ${exp
       ? "bg-gradient-to-br from-red-600 to-red-900 shadow-red-900/20"
-      : "bg-gradient-to-br from-neutral-800 to-neutral-950 shadow-neutral-900/20 ring-1 ring-white/10"}`}>
+      : plan.rules.exclusive
+        ? "bg-[conic-gradient(from_210deg_at_70%_20%,#1c1917,#44403c,#a16207,#1c1917)] shadow-amber-900/30 ring-1 ring-amber-300/30"
+        : "bg-gradient-to-br from-neutral-800 to-neutral-950 shadow-neutral-900/20 ring-1 ring-white/10"}`}>
       <div aria-hidden className={`absolute -right-10 -top-12 size-40 rounded-full blur-2xl ${exp ? "bg-white/10" : "bg-amber-500/25"}`} />
+      {!exp && <div aria-hidden className="member-sheen pointer-events-none absolute inset-0" />}
       <div className="relative flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider opacity-75">{L.your_plan}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider opacity-75">{plan.rules.exclusive ? "✦ " : ""}{L.your_plan}</span>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${exp ? "bg-white/20" : soon ? "bg-amber-400 text-neutral-950" : "bg-emerald-400/90 text-neutral-950"}`}>
           {statusText(plan, L)}
         </span>
       </div>
       <p className="relative mt-1 text-2xl font-extrabold tracking-tight">{plan.planName}</p>
+      {plan.rules.description && <p className="relative -mt-0.5 text-xs opacity-75">{plan.rules.description}</p>}
       <p className="relative text-sm opacity-85">
         {exp ? L.expired_note : plan.quotaUses === null
           ? fill(L.uses_unlimited, { n: String(plan.usesInPeriod) })

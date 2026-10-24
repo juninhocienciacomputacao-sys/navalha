@@ -3,6 +3,8 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase";
 import { demoId, demoSeed, store } from "@/data/demo";
 import type { AgendaItem, ShopBundle } from "@/data/types";
 import { demoGlobal } from "@/data/demo-global";
+import { checkPlanUse } from "@/core/plan-rules";
+import { dayInZone as dayIn, minutesInZone as minIn } from "@/core/time";
 
 export type ApptStatus = AgendaItem["status"];
 export type ApptSource = "app" | "whatsapp" | "ai" | "reception" | "walk_in" | "rebook";
@@ -63,11 +65,27 @@ function seedQueue() {
   );
 }
 
-function demoActiveSub(clientId: string | null, serviceId: string, b: ShopBundle, at: Date) {
+function demoActiveSub(clientId: string | null, serviceId: string, b: ShopBundle, at: Date, barberId: string) {
   if (!clientId) return null;
   const svc = b.services.find((s) => s.id === serviceId);
-  return store.subscriptions.find((x) => x.clientId === clientId && !x.cancelledAt && svc?.planIds.includes(x.planId)
-    && x.periodStart <= at && x.periodEnd >= at) ?? null;
+  const sub = store.subscriptions.find((x) => x.clientId === clientId && !x.cancelledAt && svc?.planIds.includes(x.planId)
+    && x.periodStart <= at && x.periodEnd >= at);
+  if (!sub) return null;
+  const tz = b.shop.timezone;
+  const useDays = store.appointments.filter((a) => a.subscriptionId === sub.id && isLive(a.status)).map((a) => dayIn(a.startsAt, tz));
+  return planRulesAllow(b, { planId: sub.planId, periodEnd: dayIn(sub.periodEnd, tz), usesInPeriod: sub.usesInPeriod, useDays }, at, barberId) ? sub : null;
+}
+
+/**
+ * Recepção marcando para um assinante: o plano só cobre se as regras do plano deixarem (cota, intervalo, dias, horário, barbeiros).
+ * Fora da regra o horário é cobrado avulso. A recepção nunca é impedida de marcar.
+ */
+function planRulesAllow(b: ShopBundle, sub: { planId: string; periodEnd: string; usesInPeriod: number; useDays: string[] }, at: Date, barberId: string) {
+  const plan = b.plans.find((p) => p.id === sub.planId);
+  if (!plan) return false;
+  const tz = b.shop.timezone;
+  return checkPlanUse({ plan, covers: true, periodEnd: sub.periodEnd, usesInPeriod: sub.usesInPeriod, useDays: sub.useDays },
+    { day: dayIn(at, tz), start: minIn(at, tz), barberId }).ok;
 }
 
 const demoClash = (barberId: string, startsAt: Date, endsAt: Date, exceptId?: string) =>
@@ -175,7 +193,7 @@ export async function createAppointment(b: ShopBundle, input: CreateInput): Prom
     if (demoClash(input.barberId, input.startsAt, endsAt)) return { ok: false, error: "slot_taken" };
     const client = input.clientId ? store.clients.find((c) => c.id === input.clientId) : undefined;
     if (input.clientId && !client) return { ok: false, error: "not_found" };
-    const sub = demoActiveSub(input.clientId, svc.id, b, input.startsAt);
+    const sub = demoActiveSub(input.clientId, svc.id, b, input.startsAt, barber.id);
     const id = demoId("ag");
     const row = {
       id, barberId: barber.id, clientId: client?.id ?? null, clientName: client?.name ?? input.walkInName ?? "Sem nome",
@@ -190,11 +208,17 @@ export async function createAppointment(b: ShopBundle, input: CreateInput): Prom
   // plano ativo do cliente que cobre o serviço: o atendimento sai a 0 e entra no rateio da comissão
   let subId: string | null = null;
   if (input.clientId) {
-    const day = input.startsAt.toISOString().slice(0, 10);
-    const { data: subs } = await db.from("subscriptions").select("id, plan_id")
+    const day = dayIn(input.startsAt, b.shop.timezone);
+    const { data: subs } = await db.from("subscriptions").select("id, plan_id, period_end, uses_in_period")
       .eq("shop_id", b.shop.id).eq("client_id", input.clientId).is("cancelled_at", null)
       .lte("period_start", day).gte("period_end", day);
-    subId = (subs ?? []).find((s) => svc.planIds.includes(s.plan_id))?.id ?? null;
+    const sub = (subs ?? []).find((s) => svc.planIds.includes(s.plan_id));
+    if (sub) {
+      const { data: used } = await db.from("appointments").select("starts_at")
+        .eq("subscription_id", sub.id).not("status", "in", "(cancelled,no_show)").limit(500);
+      const useDays = (used ?? []).map((a) => dayIn(new Date(a.starts_at), b.shop.timezone));
+      if (planRulesAllow(b, { planId: sub.plan_id, periodEnd: sub.period_end, usesInPeriod: sub.uses_in_period, useDays }, input.startsAt, barber.id)) subId = sub.id;
+    }
   }
   const { data, error } = await db.from("appointments").insert({
     shop_id: b.shop.id, barber_id: barber.id, client_id: input.clientId, walk_in_name: input.clientId ? null : input.walkInName,

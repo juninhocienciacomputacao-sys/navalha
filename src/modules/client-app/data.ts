@@ -5,7 +5,9 @@ import { demoId, demoSeed, store, type DemoAppointment } from "@/data/demo";
 import { daySlots, type DaySlots } from "@/data/booking";
 import { currentUser, supabaseServer } from "@/lib/supabase";
 import { addDays, atMinutes, dayInZone, minutesInZone } from "@/core/time";
-import { applyPayment, canUsePlan, subscriptionStatus } from "@/core/plans";
+import { applyPayment, subscriptionStatus } from "@/core/plans";
+import { checkBookingLimit, checkPlanUse, nextUseDay, rulesOf, type BookingLimit } from "@/core/plan-rules";
+import { bookingLimitSetting } from "@/modules/settings/data";
 import { suggestRebook } from "@/core/rebook";
 import { visitCycleDays } from "@/core/visit-cycle";
 import type { I18nText } from "@/core/types";
@@ -44,9 +46,13 @@ export async function resolveViewer(r: Repo, as?: string): Promise<Viewer> {
 // ---------- leitura ----------
 
 /** rebook: "sugerir o próximo horário" (Recursos) ligado e em quantos dias, quando o histórico ainda não diz. */
-type Ctx = { r: Repo; b: ShopBundle; now: Date; today: string; rebook: { on: boolean; days: number } };
+type Ctx = { r: Repo; b: ShopBundle; now: Date; today: string; rebook: { on: boolean; days: number }; limit: BookingLimit };
 
-function planFrom(b: ShopBundle, today: string, sub: { id: string; planId: string; periodEnd: string; usesInPeriod: number }): MyPlan | null {
+/** Dias em que a assinatura foi ou vai ser usada (sem cancelados e faltas). */
+const planUseDays = (all: { subscriptionId: string | null; day: string; status: MyAppointment["status"] }[], subId: string) =>
+  [...new Set(all.filter((a) => a.subscriptionId === subId && a.status !== "cancelled" && a.status !== "no_show").map((a) => a.day))].sort();
+
+function planFrom(b: ShopBundle, today: string, sub: { id: string; planId: string; periodEnd: string; usesInPeriod: number }, useDays: string[]): MyPlan | null {
   const plan = b.plans.find((p) => p.id === sub.planId);
   if (!plan) return null;
   const status = subscriptionStatus({ planId: plan.id, periodEnd: localDate(sub.periodEnd), usesInPeriod: sub.usesInPeriod }, localDate(today), b.shop.planAlertDays);
@@ -54,6 +60,7 @@ function planFrom(b: ShopBundle, today: string, sub: { id: string; planId: strin
     subscriptionId: sub.id, planId: plan.id, planName: plan.name, price: plan.price, quotaUses: plan.quotaUses,
     usesInPeriod: sub.usesInPeriod, periodDays: plan.periodDays, periodEnd: sub.periodEnd, daysLeft: diffDays(today, sub.periodEnd), status,
     serviceIds: b.services.filter((s) => s.planIds.includes(plan.id)).map((s) => s.id),
+    rules: rulesOf(plan), useDays,
   };
 }
 
@@ -79,14 +86,20 @@ function split(all: MyAppointment[], now: Date) {
  * Sugestão de reagendamento para assinante: mesmo barbeiro e horário mais parecido,
  * `ciclo` dias depois do último horário (concluído ou já marcado). O ciclo vem do histórico.
  */
-async function rebookOffer(c: Ctx, all: MyAppointment[], history: MyAppointment[]): Promise<RebookOffer | null> {
+async function rebookOffer(c: Ctx, all: MyAppointment[], history: MyAppointment[], plan: MyPlan): Promise<RebookOffer | null> {
   const live = all.filter((a) => a.serviceId && a.status !== "cancelled" && a.status !== "no_show")
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const base = live[0];
   if (!base || !base.serviceId || !c.b.services.some((s) => s.id === base.serviceId)) return null;
+  // com o limite de horários em aberto já atingido, não adianta sugerir outro
+  const open = all.filter((a) => new Date(a.startsAt) > c.now && (a.status === "confirmed" || a.status === "pending"));
+  if (c.limit.on && open.length >= c.limit.maxUpcoming) return null;
   const cycle = visitCycleDays(history.filter((a) => a.status === "done").map((a) => a.day), c.rebook.days);
   let start = addDays(base.day, cycle);
   if (start < c.today) start = c.today;
+  // respeita o intervalo mínimo entre usos do plano
+  const planPlan = c.b.plans.find((p) => p.id === plan.planId);
+  if (planPlan) start = nextUseDay(planPlan, plan.useDays, start);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const slots = new Map<string, DaySlots>(
     await Promise.all(days.map(async (d) => [d, await daySlots(c.r, c.b, d, base.serviceId!, undefined, c.now)] as const)),
@@ -107,9 +120,9 @@ async function rebookOffer(c: Ctx, all: MyAppointment[], history: MyAppointment[
 
 /** Tudo o que a tela Início/Meu plano precisa. `null` = sem login, ou logado mas ainda sem cadastro nesta barbearia. */
 export async function loadClientHome(r: Repo, b: ShopBundle, viewer: Viewer, now = new Date(),
-  rebook: { on: boolean; days: number } = { on: true, days: 7 }): Promise<ClientHome | null> {
-  const c: Ctx = { r, b, now, today: dayInZone(now, b.shop.timezone), rebook };
+  rebook: { on: boolean; days: number } = { on: true, days: 7 }, limit?: BookingLimit): Promise<ClientHome | null> {
   if (viewer.kind === "guest") return null;
+  const c: Ctx = { r, b, now, today: dayInZone(now, b.shop.timezone), rebook, limit: limit ?? await bookingLimitSetting(b.shop.id) };
   return viewer.kind === "demo" ? demoHome(c, viewer.clientId) : supabaseHome(c, viewer.phone);
 }
 
@@ -119,8 +132,10 @@ async function demoHome(c: Ctx, clientId: string): Promise<ClientHome | null> {
   if (!client) return null;
   const tz = c.b.shop.timezone;
   const sub = s.subscriptions.find((x) => x.clientId === clientId && !x.cancelledAt);
-  const plan = sub && c.b.shop.modules.planos ? planFrom(c.b, c.today, { id: sub.id, planId: sub.planId, periodEnd: dayInZone(sub.periodEnd, tz), usesInPeriod: sub.usesInPeriod }) : null;
-  const all = s.appointments.filter((x) => x.clientId === clientId).map((x) => apptFrom(c.b, { ...x, serviceName: { pt: x.serviceName } }));
+  const mine = s.appointments.filter((x) => x.clientId === clientId);
+  const all = mine.map((x) => apptFrom(c.b, { ...x, serviceName: { pt: x.serviceName } }));
+  const useDays = sub ? planUseDays(mine.map((x, i) => ({ subscriptionId: x.subscriptionId, day: all[i].day, status: x.status })), sub.id) : [];
+  const plan = sub && c.b.shop.modules.planos ? planFrom(c.b, c.today, { id: sub.id, planId: sub.planId, periodEnd: dayInZone(sub.periodEnd, tz), usesInPeriod: sub.usesInPeriod }, useDays) : null;
   const { upcoming, history } = split(all, c.now);
   const me: ClientMe = { id: client.id, name: client.name, phone: client.phone, photoConsentAt: client.photoConsentAt?.toISOString() ?? null };
   return {
@@ -129,7 +144,7 @@ async function demoHome(c: Ctx, clientId: string): Promise<ClientHome | null> {
       .map((p): MyPayment => ({ id: p.id, amount: p.amount, method: p.method, status: p.status, at: (p.paidAt ?? new Date()).toISOString() }))
       .sort((a, b) => b.at.localeCompare(a.at)),
     projects: demoProjectsFor(clientId, c.today),
-    rebook: plan && c.rebook.on ? await rebookOffer(c, all, history) : null,
+    rebook: plan && c.rebook.on ? await rebookOffer(c, all, history, plan) : null,
   };
 }
 
@@ -151,12 +166,14 @@ async function supabaseHome(c: Ctx, phone: string): Promise<ClientHome | null> {
       .order("created_at", { ascending: false }),
   ]);
   const sub = subs.data?.[0];
-  const plan = sub && c.b.shop.modules.planos ? planFrom(c.b, c.today, { id: sub.id, planId: sub.plan_id, periodEnd: sub.period_end, usesInPeriod: sub.uses_in_period }) : null;
   type A = { id: string; barber_id: string; service_id: string; starts_at: string; status: MyAppointment["status"]; price: number; subscription_id: string | null; services: { name: I18nText } | null };
-  const all = ((appts.data ?? []) as unknown as A[]).map((x) => apptFrom(c.b, {
+  const rows = (appts.data ?? []) as unknown as A[];
+  const all = rows.map((x) => apptFrom(c.b, {
     id: x.id, startsAt: new Date(x.starts_at), barberId: x.barber_id, serviceId: x.service_id, serviceName: x.services?.name,
     status: x.status, viaPlan: x.subscription_id !== null, price: Number(x.price),
   }));
+  const useDays = sub ? planUseDays(rows.map((x, i) => ({ subscriptionId: x.subscription_id, day: all[i].day, status: x.status })), sub.id) : [];
+  const plan = sub && c.b.shop.modules.planos ? planFrom(c.b, c.today, { id: sub.id, planId: sub.plan_id, periodEnd: sub.period_end, usesInPeriod: sub.uses_in_period }, useDays) : null;
   const { upcoming, history } = split(all, c.now);
   const projects: StyleProject[] = await Promise.all((projs.data ?? []).map(async (p) => {
     let photoUrl: string | null = null;
@@ -171,7 +188,7 @@ async function supabaseHome(c: Ctx, phone: string): Promise<ClientHome | null> {
     plan, upcoming, history: history.slice(0, 12),
     payments: (pays.data ?? []).map((p) => ({ id: p.id, amount: Number(p.amount), method: p.method, status: p.status, at: p.paid_at ?? p.created_at })),
     projects,
-    rebook: plan && c.rebook.on ? await rebookOffer(c, all, history) : null,
+    rebook: plan && c.rebook.on ? await rebookOffer(c, all, history, plan) : null,
   };
 }
 
@@ -179,7 +196,10 @@ async function supabaseHome(c: Ctx, phone: string): Promise<ClientHome | null> {
 
 export interface BookAs { day: string; minutes: number; serviceId: string; barberId: string; name: string; phone?: string }
 
-/** Agenda como o cliente atual. No modo demonstração liga ao cliente de exemplo e aplica o plano (como o banco faz). */
+/**
+ * Agenda como o cliente atual. Confere a grade, o limite de horários do cliente e as regras do plano.
+ * Com Supabase quem decide é a função book_appointment do banco (0014_plan_rules.sql); no modo demonstração, este código.
+ */
 export async function bookAsViewer(b: ShopBundle, viewer: Viewer, p: BookAs) {
   const r = repo();
   const startsAt = atMinutes(p.day, p.minutes, b.shop.timezone);
@@ -192,13 +212,37 @@ export async function bookAsViewer(b: ShopBundle, viewer: Viewer, p: BookAs) {
   }
   const s = demoSeed();
   const client = s.clients.find((x) => x.id === viewer.clientId)!;
+  const svc = b.services.find((x) => x.id === p.serviceId);
+  if (!svc) return { ok: false as const, error: "slot_taken" };
+  const tz = b.shop.timezone;
+  const now = new Date();
+
+  // limite de horários em aberto do cliente (o mesmo que o banco confere)
+  const open = s.appointments
+    .filter((x) => x.clientId === client.id && x.startsAt > now && (x.status === "confirmed" || x.status === "pending"))
+    .map((x) => ({ day: dayInZone(x.startsAt, tz), start: minutesInZone(x.startsAt, tz), end: minutesInZone(x.startsAt, tz) + (+x.endsAt - +x.startsAt) / 60_000 }));
+  const lim = checkBookingLimit(await bookingLimitSetting(b.shop.id), open, { day: p.day, start: p.minutes, end: p.minutes + svc.durationMin });
+  if (!lim.ok) return { ok: false as const, error: `booking_limit_${lim.reason}` };
+
+  // regras do plano: cobre, cobra avulso ou recusa
+  const sub = s.subscriptions.find((x) => x.clientId === client.id && !x.cancelledAt);
+  const plan = sub && b.plans.find((x) => x.id === sub.planId);
+  let viaPlan = false;
+  if (b.shop.modules.planos && sub && plan && dayInZone(sub.periodStart, tz) <= p.day) {
+    const mine = s.appointments.filter((x) => x.clientId === client.id);
+    const useDays = planUseDays(mine.map((x) => ({ subscriptionId: x.subscriptionId, day: dayInZone(x.startsAt, tz), status: x.status })), sub.id);
+    const check = checkPlanUse(
+      { plan, covers: svc.planIds.includes(plan.id), periodEnd: dayInZone(sub.periodEnd, tz), usesInPeriod: sub.usesInPeriod, useDays },
+      { day: p.day, start: p.minutes, barberId: p.barberId },
+    );
+    if (!check.ok && check.block) return { ok: false as const, error: `plan_rule_${check.reason}` };
+    viaPlan = check.ok;
+  }
+
   const res = await r.book({ shopId: b.shop.id, barberId: p.barberId, serviceId: p.serviceId, name: client.name, phone: client.phone, startsAt });
-  if (res.ok) {
+  if (res.ok && viaPlan && sub) {
     const appt = s.appointments.find((x) => x.id === res.id) as DemoAppointment | undefined;
-    const sub = s.subscriptions.find((x) => x.clientId === client.id && !x.cancelledAt);
-    const plan = sub && b.plans.find((x) => x.id === sub.planId);
-    const svc = b.services.find((x) => x.id === p.serviceId);
-    if (b.shop.modules.planos && appt && sub && plan && svc && canUsePlan(sub, plan, svc, new Date()).ok) {
+    if (appt) {
       appt.subscriptionId = sub.id; appt.viaPlan = true; appt.price = 0;
     }
   }
@@ -248,7 +292,7 @@ export async function startPlanPayment(b: ShopBundle, viewer: Viewer, method: "p
     s.payments.push({ id, clientId: viewer.clientId, subscriptionId: sub.id, appointmentId: null, amount: plan.price, method, status: "paid", paidAt });
     return { ok: true, mode: "demo", paymentId: id, periodEnd: dayInZone(sub.periodEnd, b.shop.timezone) };
   }
-  const home = await supabaseHome({ r: repo(), b, now: new Date(), today: dayInZone(new Date(), b.shop.timezone), rebook: { on: false, days: 7 } }, viewer.phone);
+  const home = await supabaseHome({ r: repo(), b, now: new Date(), today: dayInZone(new Date(), b.shop.timezone), rebook: { on: false, days: 7 }, limit: { on: false, maxUpcoming: 1, onePerDay: false } }, viewer.phone);
   if (!home?.plan) return { ok: false, error: "subscription_not_found" };
   const db = await supabaseServer();
   const { data, error } = await db.rpc("start_plan_payment", { p_subscription: home.plan.subscriptionId, p_method: method });

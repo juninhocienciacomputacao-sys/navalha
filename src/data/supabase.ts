@@ -4,6 +4,7 @@ import { resolveModules } from "@/core/modules";
 import { revenueRows } from "@/core/finance";
 import { dayInZone } from "@/core/time";
 import { toMinutes } from "@/core/types";
+import { PLAN_RULE_COLUMNS, rulesFromRow, type PlanRuleRow } from "./plan-row";
 import type { AgendaItem, BookResult, Dashboard, Repo, ShopBundle } from "./types";
 
 const minutes = (t: string) => toMinutes(t.slice(0, 5));
@@ -19,7 +20,7 @@ export const supabaseRepo: Repo = {
       db.from("barbers").select("id, display_name, role_title, color, photo").eq("shop_id", shop.id).eq("active", true).order("sort"),
       // planos de cada serviço vêm junto (antes lia a tabela plan_services de todas as barbearias)
       db.from("services").select("id, name, duration_min, price, plan_services(plan_id)").eq("shop_id", shop.id).eq("active", true).order("sort"),
-      db.from("plans").select("id, name, price, quota_uses, period_days").eq("shop_id", shop.id).eq("active", true),
+      db.from("plans").select(`id, name, price, quota_uses, period_days, ${PLAN_RULE_COLUMNS}`).eq("shop_id", shop.id).eq("active", true),
       db.from("walk_in_policy").select("*").eq("shop_id", shop.id).maybeSingle(),
     ]);
     const bundle: ShopBundle = {
@@ -34,7 +35,8 @@ export const supabaseRepo: Repo = {
           id: s.id, name: s.name, durationMin: s.duration_min, price: Number(s.price),
           planIds: (s.plan_services ?? []).map((x) => x.plan_id),
         })),
-      plans: (plans.data ?? []).map((p) => ({ id: p.id, name: p.name, price: Number(p.price), quotaUses: p.quota_uses, periodDays: p.period_days })),
+      plans: ((plans.data ?? []) as unknown as ({ id: string; name: string; price: number; quota_uses: number | null; period_days: number } & PlanRuleRow)[])
+        .map((p) => ({ id: p.id, name: p.name, price: Number(p.price), quotaUses: p.quota_uses, periodDays: p.period_days, rules: rulesFromRow(p) })),
       walkIn: walkIn.data
         ? { enabled: walkIn.data.enabled, perPeakHour: walkIn.data.per_peak_hour, peakStarts: walkIn.data.peak_starts.map(minutes), blockMin: walkIn.data.block_min }
         : { enabled: false, perPeakHour: 0, peakStarts: [], blockMin: 45 },
@@ -58,7 +60,9 @@ export const supabaseRepo: Repo = {
     });
     if (error) {
       const known = ["not_logged_in", "slot_taken", "slot_in_past", "service_not_found", "barber_not_found"].find((k) => error.message.includes(k));
-      return { ok: false, error: known ?? "unknown" };
+      // limite de agendamentos do cliente e regras do plano (0014_plan_rules.sql)
+      const rule = error.message.match(/\b(booking_limit_\w+|plan_rule_\w+)/)?.[1];
+      return { ok: false, error: rule ?? known ?? "unknown" };
     }
     return { ok: true, id: data as string };
   },

@@ -46,6 +46,7 @@ export default async function Planos({ params, searchParams }: {
       </section>
 
       <PlanCatalog slug={slug} canManage={canManage} currency={shop.currency} lang={shop.defaultLang}
+        barbers={barbers.map((b) => ({ id: b.id, name: b.name, color: b.color }))}
         services={services.map((s) => ({ id: s.id, name: s.name.pt, price: s.price }))}
         plans={plans.map((p) => {
           const mine = live.filter((s) => s.planId === p.id);

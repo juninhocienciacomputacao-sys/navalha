@@ -52,6 +52,13 @@ Tudo é escolhido pelo dono. A parte difícil é o atendimento de plano, e o don
 
 Também dá para configurar: aluguel de cadeira, exceções por serviço, produtos, bônus por venda de plano, taxa de cartão, insumos, metas por degrau e garantia mínima. O código está em `src/core/commission.ts`.
 
+### Planos sob medida e anti-abuso na agenda
+
+- Cada plano pode ter regras de uso: intervalo mínimo entre usos (ex.: 1 a cada 7 dias), dias da semana, faixa de horário e barbeiros. Fora da regra, o dono escolhe entre cobrar avulso ou não deixar marcar.
+- Plano exclusivo: não aparece no app, só a equipe oferece, com número de vagas.
+- "Um horário por vez" (Recursos): o cliente não marca dois horários ao mesmo tempo nem guarda vários em aberto.
+- Regras em `src/core/plan-rules.ts` e no banco em `0014_plan_rules.sql` (a função `book_appointment` confere tudo).
+
 ## Telas
 
 Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Planos, Financeiro, Comissões, Equipe, Serviços, Mensagens, Shopping, Recursos e Acessos (só o dono). Também a TV da recepção (`/tv/[slug]`, com QR code) e o app do cliente (`/b/[slug]`: início, agendar, shopping, meu plano, corte ideal e projeto de visual).

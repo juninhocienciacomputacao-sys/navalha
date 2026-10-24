@@ -6,7 +6,7 @@ import { dayInZone } from "@/core/time";
 import { asLang } from "@/i18n";
 import { loadClientHome, resolveViewer } from "@/modules/client-app/data";
 import { clientCatalog } from "@/modules/client-app/catalog";
-import { rebookSetting } from "@/modules/settings/data";
+import { bookingLimitSetting, rebookSetting } from "@/modules/settings/data";
 import ClientApp, { type Tab } from "./ClientApp";
 
 export const dynamic = "force-dynamic";
@@ -34,10 +34,13 @@ export default async function Page({ params, searchParams }: {
   const today = dayInZone(now, bundle.shop.timezone);
   const viewer = await resolveViewer(r, q.as);
   const mods = bundle.shop.modules;
-  const rebook = mods.planos ? await rebookSetting(bundle.shop.id) : { on: false, days: 7 };
+  const [rebook, limit] = await Promise.all([
+    mods.planos ? rebookSetting(bundle.shop.id) : Promise.resolve({ on: false, days: 7 }),
+    bookingLimitSetting(bundle.shop.id),
+  ]);
   const [initial, home, catalog] = await Promise.all([
     daySlots(r, bundle, today, bundle.services[0].id),
-    loadClientHome(r, bundle, viewer, now, rebook),
+    loadClientHome(r, bundle, viewer, now, rebook, limit),
     mods.shopping ? clientCatalog(bundle) : Promise.resolve(null),
   ]);
   // abas de módulos desligados não aparecem (nem pelo link direto)
@@ -46,7 +49,7 @@ export default async function Page({ params, searchParams }: {
   return (
     <ClientApp
       key={viewer.kind === "demo" ? viewer.clientId : viewer.kind}
-      bundle={bundle} lang={lang} today={today} initial={initial} viewer={viewer} home={home} catalog={catalog} initialTab={tab}
+      bundle={bundle} lang={lang} today={today} initial={initial} viewer={viewer} home={home} catalog={catalog} initialTab={tab} limit={limit}
       hour={Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: bundle.shop.timezone }).format(now))}
     />
   );
