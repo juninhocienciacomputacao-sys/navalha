@@ -9,8 +9,11 @@ const out = [
   "grant select, insert, update, delete on all tables in schema public to anon, authenticated;",
   "grant usage, select on all sequences in schema public to anon, authenticated;",
 ];
+// colunas novas (banco antigo ganha a coluna antes das funções que usam ela)
+out.push(...(src.match(/^alter table \w+ add column if not exists[^;]*;$/gm) ?? []));
 const fns = src.match(/^create or replace function[\s\S]*?\bas \$\$[\s\S]*?\$\$;/gm) ?? [];
 out.push(...fns);
+out.push(...(src.match(/^drop policy if exists [^\n]*;\ncreate policy [^\n]*;$/gm) ?? []));
 out.push(...(src.match(/^(grant|revoke) [^\n]*;$/gm) ?? []));
 out.push(...(src.match(/^do \$\$\nbegin\n  if exists \(select 1 from pg_roles[\s\S]*?end \$\$;/gm) ?? []));
 for (const t of src.match(/^create trigger[\s\S]*?;/gm) ?? []) {

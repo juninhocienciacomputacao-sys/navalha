@@ -8,7 +8,8 @@ import type { ShopSettings } from "@/modules/settings/data";
 import { CURRENCIES, FEATURES, GROUPS, WEEKDAYS, type FeatureDef, type FeatureState, type FieldDef } from "@/modules/settings/features";
 import { Choice, MultiChoice, PresetNumber, SelectList, Stepper } from "@/components/pick";
 import { DAY_STEPS, moneyStep, PERCENT_STEPS, priceSteps, timeSteps } from "@/core/presets";
-import { saveFeatureAction, saveHoursAction, savePlanRulesAction, saveShopInfoAction, saveWalkInAction } from "./actions";
+import { saveFeatureAction, saveHoursAction, saveModulesAction, savePlanRulesAction, saveShopInfoAction, saveWalkInAction } from "./actions";
+import { BASE_PARTS, MODULES, PACKAGES, packageOf, type Modules } from "@/core/modules";
 
 type Result = { ok: boolean; error?: string };
 
@@ -56,7 +57,9 @@ function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (v: 
 
 export default function Settings({ slug, settings, canEdit, zones }: { slug: string; settings: ShopSettings; canEdit: boolean; zones: string[] }) {
   const { shop, features, walkIn } = settings;
-  const onCount = features.filter((f) => f.enabled).length;
+  const visible = FEATURES.filter((f) => !f.requires || shop.modules[f.requires]);
+  const ready = visible.filter((f) => !f.soon);
+  const onCount = features.filter((f) => f.enabled && ready.some((d) => d.key === f.key)).length;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -64,17 +67,19 @@ export default function Settings({ slug, settings, canEdit, zones }: { slug: str
         <p className="text-xs uppercase tracking-wide text-neutral-500">Recursos</p>
         <h1 className="text-2xl font-bold">Recursos e configurações</h1>
         <p className="mt-1 max-w-3xl text-sm text-neutral-500">
-          Cada barbearia liga só o que quer usar e ajusta do seu jeito. <b>{onCount} de {features.length}</b> recursos ligados agora.
+          Cada barbearia liga só o que quer usar e ajusta do seu jeito. <b>{onCount} de {ready.length}</b> recursos ligados agora.
           As mudanças valem na hora no painel, na TV da recepção e no app do cliente.
         </p>
         {!canEdit && <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">Só o dono ou o gerente podem mudar estas opções.</p>}
       </header>
 
-      {GROUPS.map((g) => (
+      <ModulesSection slug={slug} modules={shop.modules} canEdit={canEdit} />
+
+      {GROUPS.filter((g) => visible.some((f) => f.group === g.id)).map((g) => (
         <section key={g.id} className="mb-8">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">{g.title}</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.filter((f) => f.group === g.id).map((def) => {
+            {visible.filter((f) => f.group === g.id).sort((a, b) => Number(Boolean(a.soon)) - Number(Boolean(b.soon))).map((def) => {
               const st = features.find((f) => f.key === def.key)!;
               return <FeatureCard key={def.key + JSON.stringify(st)} slug={slug} def={def} state={st} canEdit={canEdit} currency={shop.currency} lang={shop.defaultLang} />;
             })}
@@ -87,7 +92,7 @@ export default function Settings({ slug, settings, canEdit, zones }: { slug: str
         <HoursSection key={JSON.stringify([shop.openingHours, shop.slotStepMin])} slug={slug} hours={shop.openingHours} step={shop.slotStepMin} canEdit={canEdit} />
         <div className="flex flex-col gap-4">
           <WalkInSection key={JSON.stringify(walkIn)} slug={slug} policy={walkIn} canEdit={canEdit} />
-          <PlanSection key={`${shop.planAlertDays}-${settings.blockExpiredPlans}`} slug={slug} days={shop.planAlertDays} block={settings.blockExpiredPlans} canEdit={canEdit} />
+          {shop.modules.planos && <PlanSection key={`${shop.planAlertDays}-${settings.blockExpiredPlans}`} slug={slug} days={shop.planAlertDays} block={settings.blockExpiredPlans} canEdit={canEdit} />}
         </div>
       </div>
 
@@ -106,16 +111,18 @@ function FeatureCard({ slug, def, state, canEdit, currency, lang }: {
   const onlyFields = Object.fromEntries(def.fields.map((f) => [f.key, cfg[f.key]]));
 
   return (
-    <div className={`card flex flex-col gap-3 ${state.enabled ? "" : "opacity-80"}`}>
+    <div className={`card flex flex-col gap-3 ${state.enabled ? "" : "opacity-80"} ${def.soon ? "border-dashed" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold">{def.title}</h3>
           <p className="mt-1 text-sm text-neutral-500">{def.description}</p>
         </div>
-        <Switch on={state.enabled} label={def.title} disabled={!canEdit || pending}
-          onChange={(v) => save(() => saveFeatureAction(slug, def.key, v, onlyFields))} />
+        {def.soon
+          ? <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500 dark:bg-neutral-800">Em breve</span>
+          : <Switch on={state.enabled} label={def.title} disabled={!canEdit || pending}
+              onChange={(v) => save(() => saveFeatureAction(slug, def.key, v, onlyFields))} />}
       </div>
-      {state.enabled && def.fields.length > 0 && (
+      {state.enabled && !def.soon && def.fields.length > 0 && (
         <div className="space-y-2 border-t border-neutral-100 pt-3 text-sm dark:border-neutral-800">
           {def.fields.map((f) => f.type === "bool" ? (
             <div key={f.key} className="flex items-center justify-between gap-2">
@@ -300,5 +307,71 @@ function ShopSection({ slug, shop, canEdit, zones }: { slug: string; shop: ShopS
       </div>
       {canEdit && <div className="mt-4 flex items-center gap-3"><button className="btn" disabled={pending}>Salvar dados</button><Msg msg={msg} /></div>}
     </form>
+  );
+}
+
+/** Pacote ("Só agendamento" ou "Completo") e o liga/desliga de cada módulo. */
+function ModulesSection({ slug, modules, canEdit }: { slug: string; modules: Modules; canEdit: boolean }) {
+  const [m, setM] = useState(modules);
+  const { pending, msg, save } = useSaver();
+  const current = packageOf(m);
+  const dirty = JSON.stringify(m) !== JSON.stringify(modules);
+  const label = current === "personalizado" ? "Personalizado" : PACKAGES.find((p) => p.key === current)!.title;
+
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Pacote e módulos</h2>
+          <p className="text-sm text-neutral-500">
+            Escolha um pacote pronto ou ligue só o que quiser. Módulo desligado some do menu, da TV e do app do cliente.
+            Nada é apagado: religou, volta como estava.
+          </p>
+        </div>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">Agora: {label}</span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {PACKAGES.map((p) => {
+          const on = current === p.key;
+          return (
+            <button key={p.key} type="button" disabled={!canEdit || pending} aria-pressed={on} onClick={() => setM({ ...p.modules })}
+              className={`card text-left transition disabled:cursor-not-allowed ${on ? "ring-2 ring-amber-500" : "hover:border-amber-400"}`}>
+              <span className="flex items-center justify-between gap-2">
+                <b className="text-base">{p.title}</b>
+                <span className={`grid size-5 place-items-center rounded-full border-2 ${on ? "border-amber-500 bg-amber-500" : "border-neutral-300 dark:border-neutral-600"}`}>
+                  {on && <span className="size-2 rounded-full bg-white" />}
+                </span>
+              </span>
+              <span className="mt-1 block text-sm text-neutral-500">{p.description}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="card mt-3">
+        <p className="text-sm text-neutral-500">
+          <b className="text-neutral-700 dark:text-neutral-200">Sempre ligados:</b> {BASE_PARTS.join(", ")}.
+        </p>
+        <ul className="mt-3 divide-y divide-neutral-100 dark:divide-neutral-800">
+          {MODULES.map((d) => (
+            <li key={d.key} className="flex items-center justify-between gap-3 py-2.5">
+              <span className="min-w-0">
+                <b className="text-sm"><span aria-hidden>{d.icon}</span> {d.title}</b>
+                <span className="block text-xs text-neutral-500">{d.description} <i>({d.where})</i></span>
+              </span>
+              <Switch on={m[d.key]} label={d.title} disabled={!canEdit || pending} onChange={(v) => setM({ ...m, [d.key]: v })} />
+            </li>
+          ))}
+        </ul>
+        {canEdit && (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button className="btn" type="button" disabled={!dirty || pending} onClick={() => save(() => saveModulesAction(slug, m))}>Salvar módulos</button>
+            {dirty && <button type="button" className="text-sm text-neutral-500 hover:underline" onClick={() => setM(modules)}>Desfazer</button>}
+            <Msg msg={msg} />
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

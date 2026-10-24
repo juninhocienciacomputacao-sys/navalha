@@ -53,13 +53,17 @@ export default function ClientApp(p: AppProps) {
   };
   const loginHref = `/entrar?next=${encodeURIComponent(`/b/${bundle.shop.slug}?lang=${lang}&tab=${tab}`)}`;
   const common = { bundle, lang, L, today: p.today, demoAs };
+  const mods = bundle.shop.modules;
+
+  const tabs = ([["home", "home", L.tab_home], ["book", "calendar", L.tab_book], ["shop", "bag", L.tab_shop], ["plan", "card", L.tab_plan]] as const)
+    .filter(([k]) => (k === "shop" ? mods.shopping : k === "plan" ? mods.planos : true));
 
   let body: React.ReactNode;
-  if (screen?.k === "pay" && home?.plan) body = <PayScreen {...common} plan={home.plan} onBack={() => setScreen(null)} onBook={() => book(null)} onHome={() => go("home")} />;
-  else if (screen?.k === "style") {
+  if (screen?.k === "pay" && home?.plan && mods.planos) body = <PayScreen {...common} plan={home.plan} onBack={() => setScreen(null)} onBook={() => book(null)} onHome={() => go("home")} />;
+  else if (screen?.k === "style" && mods.estilo) {
     body = <StyleFlow {...common} home={home} loginHref={loginHref} onBack={() => setScreen(null)}
       onCreated={(id) => { setToast(L.project_created); open({ k: "project", id }); }} />;
-  } else if (screen?.k === "project") {
+  } else if (screen?.k === "project" && mods.estilo) {
     const prj = home?.projects.find((x) => x.id === screen.id);
     body = prj
       ? <ProjectScreen {...common} project={prj} onBack={() => setScreen(null)} onBookStep={(pr) => book(pr)} />
@@ -67,9 +71,9 @@ export default function ClientApp(p: AppProps) {
   } else if (tab === "book") {
     body = <Booking key={bookKey} bundle={bundle} lang={lang} today={p.today} initial={p.initial} demoAs={demoAs} loggedIn={loggedIn}
       defaultName={home?.me.name} plan={home?.plan ?? null} preset={preset} onHome={() => go("home")} />;
-  } else if (tab === "plan") {
+  } else if (tab === "plan" && mods.planos) {
     body = <PlanTab {...common} home={home} loginHref={loginHref} onPay={() => open({ k: "pay" })} onBook={() => book(null)} />;
-  } else if (tab === "shop") {
+  } else if (tab === "shop" && mods.shopping) {
     body = <ShopTab bundle={bundle} lang={lang} L={L} catalog={p.catalog} />;
   } else {
     body = <Home {...p} L={L} demoAs={demoAs} loginHref={loginHref} onBook={book} onOpen={open} onToast={setToast} />;
@@ -114,8 +118,8 @@ export default function ClientApp(p: AppProps) {
       )}
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
-        <div className="mx-auto grid max-w-md grid-cols-4 pb-[max(env(safe-area-inset-bottom),0.4rem)] pt-1.5">
-          {([["home", "home", L.tab_home], ["book", "calendar", L.tab_book], ["shop", "bag", L.tab_shop], ["plan", "card", L.tab_plan]] as const).map(([k, icon, label]) => {
+        <div className={`mx-auto grid max-w-md ${tabs.length === 4 ? "grid-cols-4" : tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"} pb-[max(env(safe-area-inset-bottom),0.4rem)] pt-1.5`}>
+          {tabs.map(([k, icon, label]) => {
             const on = tab === k && !screen;
             return (
               <button key={k} onClick={() => (k === "book" ? book(null) : go(k))} aria-current={on ? "page" : undefined}
@@ -188,7 +192,7 @@ function Home(p: AppProps & {
         <span className="grid size-12 place-items-center rounded-full bg-amber-500 text-sm font-bold text-neutral-950">{initials(home.me.name)}</span>
       </div>
 
-      {home.plan && <PlanCard plan={home.plan} bundle={bundle} lang={lang} L={L} onPay={() => p.onOpen({ k: "pay" })} />}
+      {home.plan && bundle.shop.modules.planos && <PlanCard plan={home.plan} bundle={bundle} lang={lang} L={L} onPay={() => p.onOpen({ k: "pay" })} />}
 
       {rb && (
         <div className="mt-4 rounded-3xl border-2 border-emerald-500/60 bg-emerald-50 p-4 dark:bg-emerald-950/30">
@@ -250,7 +254,7 @@ function Home(p: AppProps & {
 
       <BigButton className="mt-4" onClick={() => p.onBook(null)}>{L.book_now}</BigButton>
 
-      <div className="mt-4 space-y-2">
+      {bundle.shop.modules.estilo && <div className="mt-4 space-y-2">
         {home.projects.map((prj) => {
           const n = nextStepIndex(prj.steps);
           const doneN = prj.steps.filter((s) => s.done).length;
@@ -272,7 +276,7 @@ function Home(p: AppProps & {
           <span className="min-w-0 flex-1"><b className="block">{L.ideal_cut}</b><small className="text-neutral-500">{L.ideal_sub}</small></span>
           <Icon name="chevron" className="size-4 text-neutral-400" />
         </Row>
-      </div>
+      </div>}
 
       <Label>{L.history}</Label>
       {home.history.length === 0 ? <p className="text-sm text-neutral-500">{L.no_history}</p> : (

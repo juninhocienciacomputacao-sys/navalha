@@ -3,13 +3,14 @@ import { atMinutes, addDays, dayInZone } from "@/core/time";
 import { daysUntil } from "@/core/plans";
 import type { AgendaItem, BookInput, BookResult, Busy, Dashboard, Repo, ShopBundle } from "./types";
 import { demoGlobal } from "./demo-global";
+import { resolveModules } from "@/core/modules";
 
 const TZ = "America/Sao_Paulo";
 
 const bundle: ShopBundle = demoGlobal("bundle", (): ShopBundle => ({
   shop: {
     id: "demo-shop", slug: "dom-bigode", name: "Dom Bigode Barbearia", address: "Rua Augusta, 1200 · São Paulo",
-    currency: "BRL", defaultLang: "pt", timezone: TZ, slotStepMin: 15, planAlertDays: 5,
+    currency: "BRL", defaultLang: "pt", timezone: TZ, slotStepMin: 15, planAlertDays: 5, modules: resolveModules({}),
     openingHours: Object.fromEntries(["1", "2", "3", "4", "5"].map((d) => [d, { open: "09:00", close: "20:00" }]).concat([["6", { open: "08:00", close: "18:00" }]])),
   },
   barbers: [

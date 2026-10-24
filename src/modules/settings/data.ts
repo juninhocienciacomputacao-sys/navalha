@@ -8,7 +8,8 @@ import type { I18nText, Lang, Service } from "@/core/types";
 import { toHHMM, toMinutes } from "@/core/types";
 import { addDays, atMinutes, dayInZone, weekday } from "@/core/time";
 import type { StatAppointment } from "@/core/barberStats";
-import { withDefaults, type FeatureKey, type FeatureState } from "./features";
+import { FEATURES, withDefaults, type FeatureKey, type FeatureState } from "./features";
+import type { Modules } from "@/core/modules";
 import { demoGlobal } from "@/data/demo-global";
 
 export interface TeamBarber {
@@ -394,4 +395,34 @@ async function saveFeatureRow(shopId: string, key: string, enabled: boolean, con
 /** Recursos da barbearia (com padrões), para outras telas consultarem se algo está ligado. */
 export async function featureStates(bundle: ShopBundle): Promise<FeatureState[]> {
   return (await getSettings(bundle.shop.id, bundle.shop, bundle.walkIn)).features;
+}
+
+// ---------------------------------------------------------------- módulos (pacote)
+
+export async function saveModules(shopId: string, modules: Modules) {
+  if (!sb()) {
+    isDemoShop(shopId);
+    store.bundle.shop.modules = { ...modules };
+    return;
+  }
+  const db = await supabaseServer();
+  const { error } = await db.from("shops").update({ modules }).eq("id", shopId);
+  if (error) throw error;
+}
+
+/**
+ * Liga/desliga de "sugerir o próximo horário" e quantos dias depois, para o app do cliente
+ * (o banco deixa qualquer um ler só a linha "rebook" dos recursos).
+ */
+export async function rebookSetting(shopId: string): Promise<{ on: boolean; days: number }> {
+  const def = FEATURES.find((f) => f.key === "rebook")!;
+  let row: { key: string; enabled: boolean; config: unknown } | undefined;
+  if (!sb()) row = demo.features.find((f) => f.key === "rebook");
+  else {
+    const db = await supabaseServer();
+    const { data } = await db.from("shop_features").select("key, enabled, config").eq("shop_id", shopId).eq("key", "rebook").maybeSingle();
+    row = data ?? undefined;
+  }
+  const st = withDefaults(row ? [row] : []).find((f) => f.key === "rebook")!;
+  return { on: st.enabled, days: Number(st.config.days ?? def.defaults.days) || 7 };
 }

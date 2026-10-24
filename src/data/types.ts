@@ -1,5 +1,6 @@
 import type { Lang, Plan, Service } from "@/core/types";
 import type { WalkInPolicy } from "@/core/slots";
+import type { Modules } from "@/core/modules";
 
 export interface ShopInfo {
   id: string;
@@ -13,6 +14,8 @@ export interface ShopInfo {
   openingHours: Record<string, { open: string; close: string }>;
   slotStepMin: number;
   planAlertDays: number;
+  /** Módulos ligados (pacote escolhido pelo dono). Ver src/core/modules.ts. */
+  modules: Modules;
 }
 
 export interface BarberInfo {

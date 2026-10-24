@@ -5,6 +5,7 @@ import { slugify } from "@/core/phone";
 import { Choice } from "@/components/pick";
 import { COUNTRIES } from "./countries";
 import { createShop } from "./actions";
+import { PACKAGES } from "@/core/modules";
 
 /** Sugestões de endereço a partir do nome (sem precisar digitar outro campo). */
 function slugIdeas(name: string): string[] {
@@ -23,6 +24,7 @@ export default function NewShopForm() {
   const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
   const [tz, setTz] = useState<string>(c.zones[0].tz);
   const [lang, setLang] = useState<string>(c.lang);
+  const [pkg, setPkg] = useState<string>("completo");
   const ideas = slugIdeas(name);
   const slug = ideas.includes(picked) ? picked : ideas[0] ?? "";
 
@@ -39,6 +41,7 @@ export default function NewShopForm() {
       <input type="hidden" name="timezone" value={tz} />
       <input type="hidden" name="currency" value={c.currency} />
       <input type="hidden" name="lang" value={lang} />
+      <input type="hidden" name="package" value={pkg} />
 
       <div>
         <p className="mb-1.5 text-xs font-medium text-neutral-500">Link dos clientes</p>
@@ -63,6 +66,12 @@ export default function NewShopForm() {
         <p className="mb-1.5 text-xs font-medium text-neutral-500">Idioma principal</p>
         <Choice name="Idioma" size="sm" value={lang} onChange={setLang}
           options={[{ value: "pt", label: "Português" }, { value: "es", label: "Español" }, { value: "en", label: "English" }]} />
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-neutral-500">Pacote <span className="font-normal">(dá para mudar depois em Recursos)</span></p>
+        <Choice name="Pacote" size="sm" value={pkg} onChange={setPkg}
+          options={PACKAGES.map((x) => ({ value: x.key, label: <span><b>{x.title}</b><span className="block text-xs font-normal opacity-70">{x.description}</span></span> }))} />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

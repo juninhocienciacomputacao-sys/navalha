@@ -86,6 +86,10 @@ await check('catálogo de serviços é público', () => as({}, async () => {
   if (r.rows[0].n !== 1) throw new Error('viu ' + r.rows[0].n);
 }));
 
+// a barbearia de teste abre todo dia das 08:00 às 20:00 (o agendamento confere o horário de funcionamento)
+await db.exec(`update shops set opening_hours = (select jsonb_object_agg(d::text, '{"open":"08:00","close":"20:00"}'::jsonb) from generate_series(0, 6) d)
+  where id = '10000000-0000-0000-0000-000000000001'`);
+
 const marcos = { sub: '00000000-0000-0000-0000-000000000099', phone: '5511988887777' };
 const novo = { sub: '00000000-0000-0000-0000-000000000097', phone: '+5511955554444' };
 const book = (start) => db.query(`select book_appointment('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
@@ -113,6 +117,66 @@ await check('cliente cancela o próprio horário, não o de outro', () => as(mar
     '30000000-0000-0000-0000-000000000001', '2030-02-01 10:00-03') id`);
   await db.query('select cancel_my_appointment($1)', [mine.rows[0].id]);
 }));
+
+await check('agendar fora do horário de funcionamento é recusado', async () => {
+  for (const t of ['2030-01-10 03:00-03', '2030-01-10 19:40-03']) {
+    await as(novo, async () => {
+      try { await book(t); } catch (e) { if (/slot_taken/.test(e.message)) return; throw e; }
+      throw new Error('aceitou ' + t);
+    });
+  }
+});
+await check('agendar em dia fechado é recusado', async () => {
+  await db.exec(`update shops set opening_hours = opening_hours - '0' where id = '10000000-0000-0000-0000-000000000001'`);
+  try {
+    await as(novo, async () => {
+      try { await book('2030-01-13 10:00-03'); } catch (e) { if (/slot_taken/.test(e.message)) return; throw e; } // domingo
+      throw new Error('aceitou domingo');
+    });
+  } finally {
+    await db.exec(`update shops set opening_hours = opening_hours || '{"0":{"open":"08:00","close":"20:00"}}' where id = '10000000-0000-0000-0000-000000000001'`);
+  }
+});
+await check('app não chama funções internas do banco', () => as(novo, async () => {
+  await expectError(`select insert_default_message_templates('10000000-0000-0000-0000-000000000002')`);
+}));
+await check('app do cliente lê os módulos e só o liga/desliga público dos recursos', async () => {
+  await db.exec(`update shops set modules = '{"financeiro": false}' where id = '10000000-0000-0000-0000-000000000001';
+    insert into shop_features (shop_id, key, enabled) values ('10000000-0000-0000-0000-000000000001', 'rebook', true),
+                                                           ('10000000-0000-0000-0000-000000000001', 'ai_receptionist', true);`);
+  await as({}, async () => {
+    const m = await db.query(`select modules from shops where id = '10000000-0000-0000-0000-000000000001'`);
+    if (m.rows[0].modules.financeiro !== false) throw new Error(JSON.stringify(m.rows));
+    const f = await db.query(`select key from shop_features`);
+    if (f.rows.map((x) => x.key).join() !== 'rebook') throw new Error(JSON.stringify(f.rows));
+  });
+  await expectError(`update shops set modules = '[]' where id = '10000000-0000-0000-0000-000000000001'`);
+});
+await check('plano sem uso sobrando ou com módulo Planos desligado: horário cobrado', async () => {
+  await db.exec(`
+    insert into plans (id, shop_id, name, price, quota_uses) values ('50000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Um corte', 40, 1);
+    insert into plan_services values ('50000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001');
+    insert into clients (id, shop_id, phone_e164, name) values ('40000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', '+5511966665555', 'Assinante');
+    insert into subscriptions (shop_id, client_id, plan_id, period_start, period_end)
+      values ('10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', '50000000-0000-0000-0000-000000000001', current_date, current_date + 30);`);
+  const assinante = { sub: '00000000-0000-0000-0000-000000000077', phone: '5511966665555' };
+  const at = (days, hour) => `${new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)} ${hour}:00-03`;
+  const price = async (t) => {
+    const r = await db.query(`select book_appointment('10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
+      '30000000-0000-0000-0000-000000000001', $1) id`, [t]);
+    return Number((await db.query(`select price from appointments where id = $1`, [r.rows[0].id])).rows[0].price);
+  };
+  await as(assinante, async () => {
+    if (await price(at(2, '10')) !== 0) throw new Error('primeiro uso deveria sair pelo plano');
+    if (await price(at(3, '10')) !== 50) throw new Error('cota acabou: deveria cobrar');
+  });
+  await db.exec(`update shops set modules = '{"planos": false}' where id = '10000000-0000-0000-0000-000000000001';
+    update subscriptions set uses_in_period = 0 where client_id = '40000000-0000-0000-0000-000000000003';`);
+  await as(assinante, async () => {
+    if (await price(at(4, '10')) !== 50) throw new Error('módulo desligado: deveria cobrar');
+  });
+  await db.exec(`update shops set modules = '{}' where id = '10000000-0000-0000-0000-000000000001'`);
+});
 
 const novoDono = { sub: '00000000-0000-0000-0000-000000000050', phone: '5511911112222' };
 await db.exec(`insert into auth.users values ('00000000-0000-0000-0000-000000000050', '+5511911112222')`);

@@ -14,7 +14,7 @@ export default async function PainelLayout({ children, params }: { children: Rea
   }
   return (
     <div className="min-h-screen md:flex">
-      <Nav slug={slug} shopName={bundle.shop.name} demo={r.mode === "demo"} />
+      <Nav slug={slug} shopName={bundle.shop.name} demo={r.mode === "demo"} modules={bundle.shop.modules} />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );

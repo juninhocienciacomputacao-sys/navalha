@@ -1,8 +1,11 @@
 // Catálogo dos recursos liga/desliga (tabela shop_features). Sem dependências de servidor: a tela usa também.
 
+// Shopping e Corte ideal viraram módulos (src/core/modules.ts): ligam e desligam abas inteiras.
+import type { ModuleKey } from "@/core/modules";
+
 export type FeatureKey =
-  | "ai_receptionist" | "style_passport" | "autofill" | "qr_checkin" | "referral" | "shopping"
-  | "ideal_cut" | "rebook" | "no_show_deposit" | "network" | "walk_in";
+  | "ai_receptionist" | "style_passport" | "autofill" | "qr_checkin" | "referral"
+  | "rebook" | "no_show_deposit" | "network" | "walk_in";
 
 export type FieldDef =
   | { key: string; label: string; type: "bool" }
@@ -18,6 +21,10 @@ export interface FeatureDef {
   defaults: Record<string, string | number | boolean>;
   fields: FieldDef[];
   note?: string;
+  /** Ainda não funciona no sistema: aparece como "Em breve" e não pode ser ligado. */
+  soon?: boolean;
+  /** Só aparece com este módulo ligado. */
+  requires?: ModuleKey;
 }
 
 export const GROUPS: { id: FeatureDef["group"]; title: string }[] = [
@@ -30,7 +37,7 @@ export const FEATURES: FeatureDef[] = [
   {
     key: "ai_receptionist", group: "agenda", title: "Recepcionista de IA no WhatsApp",
     description: "Responde texto e áudio no WhatsApp: agenda, remarca, tira dúvidas e cobra plano, no idioma do cliente.",
-    defaultOn: false, defaults: { tone: "casual", hours: "24h", charge: true },
+    defaultOn: false, soon: true, defaults: { tone: "casual", hours: "24h", charge: true },
     fields: [
       { key: "tone", label: "Jeito de falar", type: "select", options: [{ value: "casual", label: "Descontraído" }, { value: "formal", label: "Formal" }] },
       { key: "hours", label: "Atende", type: "select", options: [{ value: "24h", label: "24 horas" }, { value: "open", label: "Só no horário da barbearia" }] },
@@ -45,7 +52,7 @@ export const FEATURES: FeatureDef[] = [
   {
     key: "autofill", group: "agenda", title: "Agenda que se preenche sozinha",
     description: "Vaga cancelada é oferecida em segundos para a lista de espera. Horário parado pode ganhar desconto automático.",
-    defaultOn: true, defaults: { offer: true, idleDiscountPct: 15 },
+    defaultOn: false, soon: true, defaults: { offer: true, idleDiscountPct: 15 },
     fields: [
       { key: "offer", label: "Oferecer vaga cancelada para a lista de espera", type: "bool" },
       { key: "idleDiscountPct", label: "Desconto em horário parado", type: "number", min: 0, max: 50, suffix: "%" },
@@ -54,18 +61,18 @@ export const FEATURES: FeatureDef[] = [
   {
     key: "rebook", group: "agenda", title: "Sugerir o próximo horário (assinantes)",
     description: "Depois do atendimento, sugere ao assinante o próximo horário pelo histórico dele.",
-    defaultOn: true, defaults: { days: 7 },
+    defaultOn: true, requires: "planos", defaults: { days: 7 },
     fields: [{ key: "days", label: "Sugerir para daqui a", type: "number", min: 3, max: 60, suffix: "dias" }],
   },
   {
-    key: "qr_checkin", group: "agenda", title: "Check-in por QR na porta",
-    description: "O cliente lê o código na entrada e confirma presença ou entra na fila. Aparece na TV da recepção.",
-    defaultOn: true, defaults: {}, fields: [],
+    key: "qr_checkin", group: "agenda", title: "QR para agendar na TV",
+    description: "A TV da recepção mostra um QR: o cliente lê com o celular e abre o app para agendar ou entrar na fila.",
+    defaultOn: true, requires: "tv", defaults: {}, fields: [],
   },
   {
     key: "no_show_deposit", group: "agenda", title: "Sinal para quem falta",
     description: "Cobra um sinal via Pix na hora de marcar, só de clientes que já faltaram.",
-    defaultOn: false, defaults: { pct: 30, after: 2 },
+    defaultOn: false, soon: true, defaults: { pct: 30, after: 2 },
     fields: [
       { key: "pct", label: "Valor do sinal", type: "number", min: 5, max: 100, suffix: "% do serviço" },
       { key: "after", label: "Cobrar a partir de", type: "number", min: 1, max: 10, suffix: "faltas" },
@@ -74,7 +81,7 @@ export const FEATURES: FeatureDef[] = [
   {
     key: "style_passport", group: "cliente", title: "Passaporte de estilo",
     description: "Ficha do corte (máquina, pente, medidas, fotos) que acompanha o cliente.",
-    defaultOn: true, defaults: { share: true, preview: true },
+    defaultOn: false, soon: true, defaults: { share: true, preview: true },
     fields: [
       { key: "share", label: "Levar para outras barbearias da rede", type: "bool" },
       { key: "preview", label: "Prévia do corte por IA", type: "bool" },
@@ -82,25 +89,15 @@ export const FEATURES: FeatureDef[] = [
     note: "Fotos só com consentimento do cliente (LGPD).",
   },
   {
-    key: "ideal_cut", group: "cliente", title: "Corte ideal por foto",
-    description: "O cliente envia uma foto e recebe sugestões de corte e um projeto de visual com etapas.",
-    defaultOn: true, defaults: {}, fields: [],
-  },
-  {
     key: "referral", group: "cliente", title: "Indique um amigo",
     description: "Quem indica e quem chega ganham desconto. O código aparece no app do cliente.",
-    defaultOn: true, defaults: { reward: 15 },
+    defaultOn: false, soon: true, defaults: { reward: 15 },
     fields: [{ key: "reward", label: "Desconto para cada um", type: "number", min: 0, max: 1000, prefix: "money" }],
-  },
-  {
-    key: "shopping", group: "cliente", title: "Shopping de lojas parceiras",
-    description: "Aba de produtos no app, com indicação do barbeiro e comissão para a barbearia.",
-    defaultOn: true, defaults: {}, fields: [],
   },
   {
     key: "network", group: "dinheiro", title: "Rede Navalha",
     description: "Sua barbearia aparece para clientes da rede que estão de passagem pela cidade.",
-    defaultOn: false, defaults: { travelers: true },
+    defaultOn: false, soon: true, defaults: { travelers: true },
     fields: [{ key: "travelers", label: "Aceitar clientes de outras cidades", type: "bool" }],
   },
 ];
@@ -118,7 +115,8 @@ export function withDefaults(saved: { key: string; enabled: boolean; config: unk
   return FEATURES.map((f) => {
     const row = saved.find((s) => s.key === f.key);
     const config = row?.config && typeof row.config === "object" ? (row.config as Record<string, string | number | boolean>) : {};
-    return { key: f.key, enabled: row ? row.enabled : f.defaultOn, config: { ...f.defaults, ...config } };
+    // recurso "em breve" fica sempre desligado, mesmo se alguém ligou antes
+    return { key: f.key, enabled: f.soon ? false : row ? row.enabled : f.defaultOn, config: { ...f.defaults, ...config } };
   });
 }
 
