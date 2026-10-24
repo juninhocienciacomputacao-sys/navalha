@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:check": "node scripts/db-check.mjs && node scripts/db-reset-check.mjs",
+    "db:check": "node scripts/db-check.mjs && node scripts/db-reset-check.mjs && node scripts/db-update-check.mjs",
     "db:bundle": "node scripts/db-bundle.mjs && node scripts/db-repair.mjs"
   },
   "dependencies": {

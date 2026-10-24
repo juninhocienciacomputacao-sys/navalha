@@ -2,24 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { sectionOn, type Modules } from "@/core/modules";
+import { MENU } from "@/core/access";
+import type { Modules } from "@/core/modules";
 
-/** Menu do painel. Novas telas entram aqui. */
-export const SECTIONS: { href: string; label: string; icon: string }[] = [
-  { href: "", label: "Painel", icon: "📊" },
-  { href: "/agenda", label: "Agenda", icon: "📅" },
-  { href: "/clientes", label: "Clientes", icon: "👥" },
-  { href: "/planos", label: "Planos", icon: "🎟️" },
-  { href: "/financeiro", label: "Financeiro", icon: "💰" },
-  { href: "/comissoes", label: "Comissões", icon: "🧮" },
-  { href: "/equipe", label: "Equipe", icon: "💈" },
-  { href: "/servicos", label: "Serviços", icon: "✂️" },
-  { href: "/mensagens", label: "Mensagens", icon: "💬" },
-  { href: "/shopping", label: "Shopping", icon: "🛍️" },
-  { href: "/recursos", label: "Recursos", icon: "⚙️" },
-];
-
-export default function Nav({ slug, shopName, demo, modules }: { slug: string; shopName: string; demo: boolean; modules: Modules }) {
+/** Menu do painel. Novas telas entram em MENU (src/core/access.ts). */
+export default function Nav({ slug, shopName, demo, allowed, showAccess, roleLabel, modules }: {
+  slug: string; shopName: string; demo: boolean;
+  /** Telas que o nível de quem entrou pode abrir (chaves de MENU). */
+  allowed: string[];
+  /** Só o dono vê a tela de Acessos. */
+  showAccess: boolean;
+  /** Nome do nível, quando não é o dono (aparece embaixo do nome da barbearia). */
+  roleLabel?: string;
+  /** Módulos ligados (a TV da recepção some quando desligada). */
+  modules: Modules;
+}) {
+  const items = [
+    ...MENU.filter((m) => allowed.includes(m.key)),
+    ...(showAccess ? [{ key: "acessos", href: "/acessos", label: "Acessos", icon: "🔐" }] : []),
+  ];
   const path = usePathname();
   const base = `/painel/${slug}`;
   const active = (href: string) => (href === "" ? path === base : path.startsWith(base + href));
@@ -28,11 +29,11 @@ export default function Nav({ slug, shopName, demo, modules }: { slug: string; s
       <div className="flex items-center justify-between px-4 py-3 md:block md:py-5">
         <div>
           <p className="text-sm font-bold">✂️ Navalha</p>
-          <p className="truncate text-xs text-neutral-500">{shopName}{demo ? " · demonstração" : ""}</p>
+          <p className="truncate text-xs text-neutral-500">{shopName}{demo ? " · demonstração" : ""}{roleLabel ? ` · ${roleLabel}` : ""}</p>
         </div>
       </div>
       <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:overflow-visible md:pb-0">
-        {SECTIONS.filter((s) => sectionOn(modules, s.href.slice(1))).map((s) => (
+        {items.map((s) => (
           <Link key={s.href} href={base + s.href}
             className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm ${active(s.href)
               ? "bg-amber-100 font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"

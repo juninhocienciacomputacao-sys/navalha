@@ -206,6 +206,97 @@ await check('contador de usos do plano acompanha os atendimentos', async () => {
   if (await uses() !== 0) throw new Error('cancelado deveria liberar o uso');
 });
 
+// ---------- níveis de acesso da equipe ----------
+const SHOP = '10000000-0000-0000-0000-000000000001';
+const RAFA = '20000000-0000-0000-0000-000000000001';
+const JACK = '20000000-0000-0000-0000-000000000002';
+const rafaUser = { sub: '00000000-0000-0000-0000-000000000061', phone: '5562900000061' };
+const recep = { sub: '00000000-0000-0000-0000-000000000062', phone: '5562900000062' };
+const ownerC = { sub: owner, phone: '5511900000001' };
+await db.exec(`
+  insert into auth.users values ('${rafaUser.sub}', '+${rafaUser.phone}'), ('${recep.sub}', '+${recep.phone}');
+  insert into barbers (id, shop_id, display_name) values ('${JACK}', '${SHOP}', 'Jack');
+  insert into appointments (shop_id, barber_id, service_id, starts_at, ends_at, walk_in_name)
+    values ('${SHOP}', '${JACK}', '30000000-0000-0000-0000-000000000001', '2026-10-22 10:00-03', '2026-10-22 10:40-03', 'Cliente do Jack');`);
+const count = async (sql) => (await db.query(sql)).rows[0].n;
+
+await check('quem só tem convite ainda não é da equipe', () => as(rafaUser, async () => {
+  if (await count('select count(*)::int n from appointments') !== 0) throw new Error('viu a agenda antes de aceitar');
+}));
+await check('só o dono convida', async () => {
+  await as(recep, () => expectError(`insert into staff_invites (shop_id, phone_e164, role) values ('${SHOP}', '+5562900000099', 'owner')`));
+  await as(ownerC, () => db.query(`insert into staff_invites (shop_id, phone_e164, role, barber_id, display_name) values
+    ('${SHOP}', '+${rafaUser.phone}', 'barber', '${RAFA}', 'Rafa'), ('${SHOP}', '+${recep.phone}', 'reception', null, 'Ana')`));
+  // as() desfaz no fim; grava de verdade para os próximos testes
+  await db.exec(`insert into staff_invites (shop_id, phone_e164, role, barber_id, display_name) values
+    ('${SHOP}', '+${rafaUser.phone}', 'barber', '${RAFA}', 'Rafa'), ('${SHOP}', '+${recep.phone}', 'reception', null, 'Ana')`);
+});
+await check('convite vira acesso quando a pessoa entra pelo WhatsApp', async () => {
+  await db.exec(`begin; set local role authenticated;
+    select set_config('request.jwt.claim.sub', '${rafaUser.sub}', true), set_config('request.jwt.claims', '${JSON.stringify(rafaUser)}', true);
+    select claim_staff_invites();
+    select set_config('request.jwt.claim.sub', '${recep.sub}', true), set_config('request.jwt.claims', '${JSON.stringify(recep)}', true);
+    select claim_staff_invites();
+    commit;`);
+  const r = await db.query(`select m.role, m.phone_e164, (select user_id from barbers where id = '${RAFA}') = m.user_id linked
+    from shop_members m where m.user_id = '${rafaUser.sub}'`);
+  if (r.rows[0]?.role !== 'barber' || !r.rows[0].linked || r.rows[0].phone_e164 !== '+' + rafaUser.phone) throw new Error(JSON.stringify(r.rows));
+  if (await count('select count(*)::int n from staff_invites') !== 0) throw new Error('convite ficou');
+});
+await check('barbeiro vê só os próprios atendimentos (e o ocupado dos colegas sem nomes)', () => as(rafaUser, async () => {
+  const r = await db.query(`select distinct barber_id from appointments`);
+  if (r.rows.length !== 1 || r.rows[0].barber_id !== RAFA) throw new Error(JSON.stringify(r.rows));
+  const busy = await db.query(`select * from busy_slots('${SHOP}', '2026-10-22 00:00-03', '2026-10-23 00:00-03')`);
+  if (!busy.rows.some((x) => x.barber_id === JACK)) throw new Error('não viu o ocupado do Jack');
+}));
+await check('barbeiro não marca na agenda do colega', () => as(rafaUser, () => expectError(
+  `insert into appointments (shop_id, barber_id, service_id, starts_at, ends_at, walk_in_name)
+   values ('${SHOP}', '${JACK}', '30000000-0000-0000-0000-000000000001', '2030-03-01 10:00-03', '2030-03-01 10:40-03', 'X')`)));
+await check('barbeiro não muda preço de serviço nem despesas', () => as(rafaUser, async () => {
+  const r = await db.query(`update services set price = 1 where shop_id = '${SHOP}' returning id`);
+  if (r.rows.length) throw new Error('mudou o preço');
+  await expectError(`insert into expenses (shop_id, name, amount) values ('${SHOP}', 'x', 1)`);
+}));
+await check('recepção vê a agenda de todos', () => as(recep, async () => {
+  if (await count(`select count(distinct barber_id)::int n from appointments`) !== 2) throw new Error('não viu todos');
+}));
+await check('dono libera Serviços para a recepção e ela passa a poder mudar', async () => {
+  await as(recep, async () => {
+    if ((await db.query(`update services set price = 55 where shop_id = '${SHOP}' returning id`)).rows.length) throw new Error('mudou antes de liberar');
+  });
+  await db.exec(`update shops set role_access = '{"reception":{"sections":["servicos"]}}' where id = '${SHOP}'`);
+  await as(recep, async () => {
+    if (!(await db.query(`update services set price = 55 where shop_id = '${SHOP}' returning id`)).rows.length) throw new Error('não mudou');
+    const a = (await db.query(`select my_access('${SHOP}') a`)).rows[0].a;
+    if (a.agenda !== 'all' || a.role !== 'reception') throw new Error(JSON.stringify(a));
+  });
+});
+await check('dono troca o barbeiro para "só a própria agenda" e de volta', async () => {
+  await db.exec(`update shops set role_access = '{"barber":{"sections":[],"agenda":"all"}}' where id = '${SHOP}'`);
+  await as(rafaUser, async () => { if (await count(`select count(distinct barber_id)::int n from appointments`) !== 2) throw new Error('não abriu'); });
+  await db.exec(`update shops set role_access = '{}' where id = '${SHOP}'`);
+});
+await check('só o dono muda os níveis (nem quem cuida dos Recursos)', async () => {
+  await db.exec(`update shops set role_access = '{"reception":{"sections":["recursos"]}}' where id = '${SHOP}'`);
+  await as(recep, async () => {
+    await db.query(`update shops set address = 'Rua 1' where id = '${SHOP}'`);
+    await expectError(`update shops set role_access = '{"reception":{"sections":["recursos","financeiro"]}}' where id = '${SHOP}'`);
+  });
+  await as(recep, () => expectError(`select set_member_access('${SHOP}', '${recep.sub}', 'owner')`));
+  await db.exec(`update shops set role_access = '{}' where id = '${SHOP}'`);
+});
+await check('dono não pode deixar a barbearia sem dono', () => as(ownerC, async () => {
+  try { await db.query(`select remove_member('${SHOP}', '${owner}')`); } catch (e) { if (/last_owner/.test(e.message)) return; throw e; }
+  throw new Error('deveria ter falhado');
+}));
+await check('dono muda o nível e o barbeiro ligado de alguém', () => as(ownerC, async () => {
+  await db.query(`select set_member_access('${SHOP}', '${rafaUser.sub}', 'barber', '${JACK}')`);
+  const r = await db.query(`select id from barbers where user_id = '${rafaUser.sub}'`);
+  if (r.rows.length !== 1 || r.rows[0].id !== JACK) throw new Error(JSON.stringify(r.rows));
+  await db.query(`select remove_member('${SHOP}', '${recep.sub}')`);
+  if (await count(`select count(*)::int n from shop_members where user_id = '${recep.sub}'`) !== 0) throw new Error('não removeu');
+}));
+
 await check('arquivo de reparo recria funções sem mexer nos dados (e roda duas vezes)', async () => {
   const before = (await db.query('select count(*)::int n from shops')).rows[0].n;
   await db.exec('drop function create_shop(text, text, text, text, text)');

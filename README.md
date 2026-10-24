@@ -38,6 +38,7 @@ Para usar o banco de verdade, crie um projeto no [Supabase](https://supabase.com
 - A equipe só enxerga a própria barbearia.
 - O cliente entra pelo WhatsApp (código de verificação) e só enxerga os próprios dados.
 - O cliente não grava direto nas tabelas. Ele agenda pela função `book_appointment`, que confere serviço, profissional, horário e plano.
+- Níveis da equipe (dono, gerente, recepção, barbeiro) escolhidos pelo dono em Acessos. O banco também confere: o barbeiro só lê e mexe nos próprios atendimentos (dos colegas, só vê livre/ocupado) e cada tela só aceita alterações de quem tem ela liberada. Regras em `src/core/access.ts` e na migração `0012_team_access.sql`.
 - O banco recusa dois atendimentos do mesmo barbeiro no mesmo horário, mesmo que dois clientes confirmem ao mesmo tempo.
 
 ### Comissões
@@ -53,7 +54,7 @@ Também dá para configurar: aluguel de cadeira, exceções por serviço, produt
 
 ## Telas
 
-Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Planos, Financeiro, Comissões, Equipe, Serviços, Mensagens, Shopping e Recursos. Também a TV da recepção (`/tv/[slug]`, com QR code) e o app do cliente (`/b/[slug]`: início, agendar, shopping, meu plano, corte ideal e projeto de visual).
+Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Planos, Financeiro, Comissões, Equipe, Serviços, Mensagens, Shopping, Recursos e Acessos (só o dono). Também a TV da recepção (`/tv/[slug]`, com QR code) e o app do cliente (`/b/[slug]`: início, agendar, shopping, meu plano, corte ideal e projeto de visual).
 
 ## Próximos passos
 

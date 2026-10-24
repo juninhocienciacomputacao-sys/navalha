@@ -5,7 +5,6 @@ import { z } from "zod";
 import { assertStaff } from "@/lib/staff";
 import { deleteTemplate, restoreDefaults, saveTemplate, setTemplateEnabled } from "@/modules/messages/data";
 
-const ROLES = ["owner", "manager"] as const;
 const text = z.string().max(2000);
 
 const templateSchema = z.object({
@@ -22,12 +21,12 @@ export type ActionResult = { ok: true; id?: string; count?: number } | { ok: fal
 const fail = (e: unknown): ActionResult => ({
   ok: false,
   error: e instanceof z.ZodError ? e.issues[0]?.message ?? "Dados inválidos." : e instanceof Error && e.message === "forbidden"
-    ? "Só o dono ou o gerente pode mudar as mensagens." : "Não deu para salvar. Tente de novo.",
+    ? "Seu nível de acesso não permite mudar as mensagens. Peça ao dono." : "Não deu para salvar. Tente de novo.",
 });
 
 export async function saveTemplateAction(slug: string, input: z.input<typeof templateSchema>): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, [...ROLES]);
+    const { bundle } = await assertStaff(slug, "mensagens");
     const t = templateSchema.parse(input);
     const id = await saveTemplate(bundle.shop.id, { ...t, offset: t.trigger === "campaign" ? 0 : t.offset });
     revalidatePath(`/painel/${slug}/mensagens`);
@@ -39,7 +38,7 @@ export async function saveTemplateAction(slug: string, input: z.input<typeof tem
 
 export async function toggleTemplateAction(slug: string, id: string, enabled: boolean): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, [...ROLES]);
+    const { bundle } = await assertStaff(slug, "mensagens");
     const p = z.object({ id: z.string().min(1).max(64), enabled: z.boolean() }).parse({ id, enabled });
     await setTemplateEnabled(bundle.shop.id, p.id, p.enabled);
     revalidatePath(`/painel/${slug}/mensagens`);
@@ -51,7 +50,7 @@ export async function toggleTemplateAction(slug: string, id: string, enabled: bo
 
 export async function deleteTemplateAction(slug: string, id: string): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, [...ROLES]);
+    const { bundle } = await assertStaff(slug, "mensagens");
     await deleteTemplate(bundle.shop.id, z.string().min(1).max(64).parse(id));
     revalidatePath(`/painel/${slug}/mensagens`);
     return { ok: true };
@@ -62,7 +61,7 @@ export async function deleteTemplateAction(slug: string, id: string): Promise<Ac
 
 export async function restoreDefaultsAction(slug: string): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, [...ROLES]);
+    const { bundle } = await assertStaff(slug, "mensagens");
     const count = await restoreDefaults(bundle.shop.id);
     revalidatePath(`/painel/${slug}/mensagens`);
     return { ok: true, count };

@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { addDays, atMinutes, dayInZone } from "@/core/time";
 import { monthStartIn, weeklyStats, type WeekStat } from "@/core/barberStats";
 import { listBarbers, statAppointments } from "@/modules/settings/data";
@@ -10,7 +10,7 @@ const WEEKS = 8;
 
 export default async function EquipePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { bundle, role } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "equipe");
   const { shop } = bundle;
   const tz = shop.timezone;
   const now = new Date();
@@ -35,7 +35,7 @@ export default async function EquipePage({ params }: { params: Promise<{ slug: s
       slug={slug}
       currency={shop.currency}
       lang={shop.defaultLang}
-      canEdit={role === "owner" || role === "manager"}
+      canEdit={true}
       barbers={barbers}
       stats={byBarber}
       monthRevenue={monthRevenue}

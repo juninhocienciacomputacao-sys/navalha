@@ -7,7 +7,6 @@ import { saveRules, setPayout } from "@/modules/finance/data";
 import { commissionStatements } from "@/modules/finance/compute";
 import { periodRange } from "@/core/finance";
 
-const MONEY = ["owner", "manager"] as const;
 type Result = { ok: true } | { ok: false; error: string };
 
 const pct = (label: string) => z.number({ message: `${label}: número inválido.` }).min(0, `${label}: não pode ser negativo.`).max(100, `${label}: no máximo 100%.`);
@@ -32,7 +31,7 @@ const rulesSchema = z.object({
 });
 
 export async function saveRulesAction(slug: string, input: z.input<typeof rulesSchema>): Promise<Result> {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "comissoes");
   const p = rulesSchema.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Dados inválidos." };
   try {
@@ -55,7 +54,7 @@ const payoutSchema = z.object({
 
 /** Marca a comissão do período como paga. O valor é recalculado aqui, nunca vem da tela. */
 export async function setPayoutAction(slug: string, input: z.input<typeof payoutSchema>): Promise<Result> {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "comissoes");
   const p = payoutSchema.safeParse(input);
   if (!p.success) return { ok: false, error: "Dados inválidos." };
   const range = periodRange(p.data.kind, p.data.start);

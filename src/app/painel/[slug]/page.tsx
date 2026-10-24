@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import Link from "next/link";
 import { siteOrigin } from "@/modules/messages/origin";
 import { atMinutes, dayInZone, minutesInZone, weekday } from "@/core/time";
@@ -12,7 +12,7 @@ const PX_PER_MIN = 1.1;
 
 export default async function Painel({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { r, bundle: b } = await requireStaff(slug);
+  const { r, bundle: b } = await requireSection(slug, "painel");
   const { shop, barbers } = b;
   const mods = shop.modules;
   const appLink = `${await siteOrigin()}/b/${shop.slug}?tab=plan`;

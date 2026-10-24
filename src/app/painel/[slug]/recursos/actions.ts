@@ -12,13 +12,13 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const fail = (e: unknown): ActionResult => {
   if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Dados inválidos" };
-  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Só o dono ou o gerente podem mudar as configurações." };
+  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Seu nível de acesso não permite mudar as configurações. Peça ao dono." };
   return { ok: false, error: "Não deu para salvar. Tente de novo." };
 };
 
 async function guarded(slug: string, fn: (shopId: string, walkIn: Awaited<ReturnType<typeof assertStaff>>["bundle"]["walkIn"]) => Promise<void>): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, ["owner", "manager"]);
+    const { bundle } = await assertStaff(slug, "recursos");
     await fn(bundle.shop.id, bundle.walkIn);
   } catch (e) {
     return fail(e);

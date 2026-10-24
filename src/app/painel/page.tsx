@@ -10,6 +10,8 @@ export default async function MeusPaineis() {
   const user = await currentUser();
   if (!user) redirect("/entrar?next=/painel");
   const db = await supabaseServer();
+  // quem foi convidado pelo dono (pelo WhatsApp) vira da equipe no primeiro login
+  await db.rpc("claim_staff_invites");
   const { data } = await db.from("shop_members").select("role, shops(name, slug)").eq("user_id", user.id);
   const shops = ((data ?? []) as unknown as { role: string; shops: { name: string; slug: string } }[]).filter((x) => x.shops);
   if (shops.length === 1) redirect(`/painel/${shops[0].shops.slug}`);
@@ -19,7 +21,7 @@ export default async function MeusPaineis() {
       {shops.map((x) => (
         <Link key={x.shops.slug} href={`/painel/${x.shops.slug}`} className="card hover:border-amber-400">{x.shops.name}</Link>
       ))}
-      {shops.length === 0 && <p className="text-sm text-neutral-500">Você ainda não faz parte de nenhuma barbearia.</p>}
+      {shops.length === 0 && <p className="text-sm text-neutral-500">Você ainda não faz parte de nenhuma barbearia. Se você trabalha numa barbearia, peça ao dono para te dar acesso com este número de WhatsApp.</p>}
       <Link href="/nova-barbearia" className="btn text-center">Cadastrar minha barbearia</Link>
     </main>
   );

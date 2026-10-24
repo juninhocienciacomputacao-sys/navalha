@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { dayInZone } from "@/core/time";
 import { formatMoney } from "@/core/money";
 import { daysLeft, monthlyValue } from "@/core/planboard";
@@ -15,9 +15,9 @@ export default async function Planos({ params, searchParams }: {
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { bundle, role } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "planos");
   const { shop, barbers, services } = bundle;
-  const canManage = role === "owner" || role === "manager";
+  const canManage = true;
   const today = dayInZone(new Date(), shop.timezone);
   const [plans, subs, clients] = await Promise.all([listPlans(bundle), listSubscriptions(bundle), clientOptions(bundle)]);
   const money = (n: number) => formatMoney(n, shop.currency, shop.defaultLang);
