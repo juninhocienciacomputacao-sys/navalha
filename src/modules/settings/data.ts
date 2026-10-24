@@ -16,6 +16,7 @@ export interface TeamBarber {
   name: string;
   roleTitle: string | null;
   color: string | null;
+  photo: string | null;
   active: boolean;
   pay: "commission" | "chair_rent";
   commissionPct: number;
@@ -147,11 +148,11 @@ export async function listBarbers(shopId: string): Promise<TeamBarber[]> {
   }
   const db = await supabaseServer();
   const { data, error } = await db.from("barbers")
-    .select("id, display_name, role_title, color, active, pay, commission_pct, chair_rent, monthly_goal, sort")
+    .select("id, display_name, role_title, color, photo, active, pay, commission_pct, chair_rent, monthly_goal, sort")
     .eq("shop_id", shopId).order("sort").order("display_name");
   if (error) throw error;
   return (data ?? []).map((b) => ({
-    id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, active: b.active, pay: b.pay,
+    id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, photo: b.photo ?? null, active: b.active, pay: b.pay,
     commissionPct: Number(b.commission_pct), chairRent: Number(b.chair_rent),
     monthlyGoal: b.monthly_goal === null ? null : Number(b.monthly_goal), sort: b.sort,
   }));
@@ -161,14 +162,14 @@ export async function saveBarber(shopId: string, input: BarberInput): Promise<st
   if (!sb()) {
     isDemoShop(shopId);
     const d = demoTeam();
-    const { id, name, roleTitle, color, ...extra } = input;
+    const { id, name, roleTitle, color, photo, ...extra } = input;
     let row = id ? d.barbers.get(id) : undefined;
     if (id && !row) throw new Error("not_found");
     if (!row) {
-      row = { obj: { id: demoId("b"), name, roleTitle, color }, active: true, ...extra };
+      row = { obj: { id: demoId("b"), name, roleTitle, color, photo }, active: true, ...extra };
       d.barbers.set(row.obj.id, row);
     } else {
-      Object.assign(row.obj, { name, roleTitle, color });
+      Object.assign(row.obj, { name, roleTitle, color, photo });
       Object.assign(row, extra);
     }
     syncBundle();
@@ -176,7 +177,7 @@ export async function saveBarber(shopId: string, input: BarberInput): Promise<st
   }
   const db = await supabaseServer();
   const row = {
-    display_name: input.name, role_title: input.roleTitle, color: input.color, pay: input.pay,
+    display_name: input.name, role_title: input.roleTitle, color: input.color, photo: input.photo, pay: input.pay,
     commission_pct: input.commissionPct, chair_rent: input.chairRent, monthly_goal: input.monthlyGoal, sort: input.sort,
   };
   if (input.id) {

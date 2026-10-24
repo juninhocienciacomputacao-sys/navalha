@@ -9,6 +9,8 @@ const out = [
   "grant select, insert, update, delete on all tables in schema public to anon, authenticated;",
   "grant usage, select on all sequences in schema public to anon, authenticated;",
 ];
+// colunas novas (com "if not exists"): trazem um banco antigo para a versão atual
+out.push(...(src.match(/^alter table \w+ add column if not exists[\s\S]*?;/gm) ?? []));
 const fns = src.match(/^create or replace function[\s\S]*?\bas \$\$[\s\S]*?\$\$;/gm) ?? [];
 out.push(...fns);
 out.push(...(src.match(/^(grant|revoke) [^\n]*;$/gm) ?? []));
@@ -20,5 +22,5 @@ for (const t of src.match(/^create trigger[\s\S]*?;/gm) ?? []) {
 out.push(...(src.match(/^-- barbearias já cadastradas\ndo \$\$[\s\S]*?end \$\$;/gm) ?? []));
 out.push("notify pgrst, 'reload schema';");
 fs.writeFileSync("supabase/reparar-funcoes.sql",
-  `-- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.\n-- Não apaga nem altera dados. Pode rodar mais de uma vez.\n\n` + out.join("\n\n") + "\n");
+  `-- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.\n-- Não apaga dados (só cria colunas novas que faltarem). Pode rodar mais de uma vez.\n\n` + out.join("\n\n") + "\n");
 console.log(`ok supabase/reparar-funcoes.sql (${fns.length} funções)`);

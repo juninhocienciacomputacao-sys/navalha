@@ -1,11 +1,16 @@
 -- Gerado por "npm run db:repair". Recria funções, permissões e gatilhos do Navalha.
--- Não apaga nem altera dados. Pode rodar mais de uma vez.
+-- Não apaga dados (só cria colunas novas que faltarem). Pode rodar mais de uma vez.
 
 grant usage on schema public to anon, authenticated;
 
 grant select, insert, update, delete on all tables in schema public to anon, authenticated;
 
 grant usage, select on all sequences in schema public to anon, authenticated;
+
+alter table clients add column if not exists notes text;
+
+alter table barbers add column if not exists photo text
+  check (photo is null or (photo like 'data:image/%' and length(photo) <= 300000));
 
 create or replace function is_member(target uuid, roles member_role[] default null)
 returns boolean language sql stable security definer set search_path = public as $$

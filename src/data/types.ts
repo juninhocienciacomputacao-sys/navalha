@@ -20,6 +20,8 @@ export interface BarberInfo {
   name: string;
   roleTitle: string | null;
   color: string | null;
+  /** Foto pequena (data URL) ou null para mostrar as iniciais. */
+  photo: string | null;
 }
 
 export interface ShopBundle {

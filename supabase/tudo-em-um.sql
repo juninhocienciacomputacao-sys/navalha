@@ -895,5 +895,11 @@ create trigger subscriptions_period_changed
 after update of period_start, period_end on subscriptions
 for each row execute function subscriptions_period_changed();
 
+-- ===== 0011_barber_photo.sql =====
+-- Foto do barbeiro (enviada pelo dono em Equipe). Guardada pequena (256 px, JPEG) direto na linha,
+-- para aparecer no painel, na TV e no app do cliente sem precisar de outro serviço.
+alter table barbers add column if not exists photo text
+  check (photo is null or (photo like 'data:image/%' and length(photo) <= 300000));
+
 -- Avisa a API do Supabase que as funções mudaram.
 notify pgrst, 'reload schema';

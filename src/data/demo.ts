@@ -13,10 +13,10 @@ const bundle: ShopBundle = demoGlobal("bundle", (): ShopBundle => ({
     openingHours: Object.fromEntries(["1", "2", "3", "4", "5"].map((d) => [d, { open: "09:00", close: "20:00" }]).concat([["6", { open: "08:00", close: "18:00" }]])),
   },
   barbers: [
-    { id: "b-rafa", name: "Rafa", roleTitle: "Degradê e navalhado", color: "#c2410c" },
-    { id: "b-leo", name: "Léo", roleTitle: "Barba e toalha quente", color: "#0f766e" },
-    { id: "b-dudu", name: "Dudu", roleTitle: "Cortes clássicos", color: "#4338ca" },
-    { id: "b-nina", name: "Nina", roleTitle: "Química e platinado", color: "#be185d" },
+    { id: "b-rafa", name: "Rafa", roleTitle: "Degradê e navalhado", color: "#c2410c", photo: null },
+    { id: "b-leo", name: "Léo", roleTitle: "Barba e toalha quente", color: "#0f766e", photo: null },
+    { id: "b-dudu", name: "Dudu", roleTitle: "Cortes clássicos", color: "#4338ca", photo: null },
+    { id: "b-nina", name: "Nina", roleTitle: "Química e platinado", color: "#be185d", photo: null },
   ],
   services: [
     { id: "s-corte", name: { pt: "Corte", en: "Haircut", es: "Corte" }, durationMin: 40, price: 50, planIds: ["p-club", "p-full"] },

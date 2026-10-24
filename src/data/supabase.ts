@@ -13,7 +13,7 @@ export const supabaseRepo: Repo = {
     const { data: shop } = await db.from("shops").select("*").eq("slug", slug).maybeSingle();
     if (!shop) return null;
     const [barbers, services, plans, planServices, walkIn] = await Promise.all([
-      db.from("barbers").select("id, display_name, role_title, color").eq("shop_id", shop.id).eq("active", true).order("sort"),
+      db.from("barbers").select("id, display_name, role_title, color, photo").eq("shop_id", shop.id).eq("active", true).order("sort"),
       db.from("services").select("id, name, duration_min, price").eq("shop_id", shop.id).eq("active", true).order("sort"),
       db.from("plans").select("id, name, price, quota_uses, period_days").eq("shop_id", shop.id).eq("active", true),
       db.from("plan_services").select("plan_id, service_id"),
@@ -25,7 +25,7 @@ export const supabaseRepo: Repo = {
         defaultLang: shop.default_lang as Lang, timezone: shop.timezone, openingHours: shop.opening_hours,
         slotStepMin: shop.slot_step_min, planAlertDays: shop.plan_alert_days,
       },
-      barbers: (barbers.data ?? []).map((b) => ({ id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color })),
+      barbers: (barbers.data ?? []).map((b) => ({ id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, photo: b.photo ?? null })),
       services: (services.data ?? []).map((s) => ({
         id: s.id, name: s.name, durationMin: s.duration_min, price: Number(s.price),
         planIds: (planServices.data ?? []).filter((x) => x.service_id === s.id).map((x) => x.plan_id),
