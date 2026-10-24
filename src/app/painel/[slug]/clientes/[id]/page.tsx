@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { dayInZone } from "@/core/time";
 import { formatMoney } from "@/core/money";
 import { daysLeft, expiryMessage, waLink } from "@/core/planboard";
@@ -20,7 +20,7 @@ const METHOD = { pix: "Pix", card: "Cartão", cash: "Dinheiro" } as const;
 
 export default async function Ficha({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const { bundle } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "clientes");
   const { shop, barbers } = bundle;
   const c = await getClient(bundle, decodeURIComponent(id));
   if (!c) notFound();

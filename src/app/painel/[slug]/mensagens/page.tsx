@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { pickBody, renderTemplate } from "@/core/messages";
 import { plannedSends } from "@/core/message-schedule";
 import { dayInZone } from "@/core/time";
@@ -15,9 +15,9 @@ const WINDOW_H = 48;
 
 export default async function Mensagens({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { bundle, role } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "mensagens");
   const { shop } = bundle;
-  const canEdit = role === "owner" || role === "manager";
+  const canEdit = true;
   const now = new Date();
   const templates = await listTemplates(shop.id);
   const link = `${await siteOrigin()}/b/${shop.slug}`;

@@ -21,13 +21,13 @@ const barberSchema = z.object({
 
 const fail = (e: unknown): ActionResult => {
   if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? "Dados inválidos" };
-  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Só o dono ou o gerente podem mudar a equipe." };
+  if (e instanceof Error && e.message === "forbidden") return { ok: false, error: "Seu nível de acesso não permite mudar a equipe. Peça ao dono." };
   return { ok: false, error: "Não deu para salvar. Tente de novo." };
 };
 
 export async function saveBarberAction(slug: string, input: z.input<typeof barberSchema>): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, ["owner", "manager"]);
+    const { bundle } = await assertStaff(slug, "equipe");
     await saveBarber(bundle.shop.id, barberSchema.parse(input));
   } catch (e) {
     return fail(e);
@@ -38,7 +38,7 @@ export async function saveBarberAction(slug: string, input: z.input<typeof barbe
 
 export async function setBarberActiveAction(slug: string, id: string, active: boolean): Promise<ActionResult> {
   try {
-    const { bundle } = await assertStaff(slug, ["owner", "manager"]);
+    const { bundle } = await assertStaff(slug, "equipe");
     const p = z.object({ id: z.string().min(1), active: z.boolean() }).parse({ id, active });
     await setBarberActive(bundle.shop.id, p.id, p.active);
   } catch (e) {

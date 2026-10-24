@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { SHOP_SHARE } from "@/core/shopping";
 import { clientCount, partnerCatalog, shopPartnerSettings, storeEnabled } from "@/modules/shopping/data";
 import ShoppingAdmin from "./ShoppingAdmin";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Shopping({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { bundle, role } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "shopping");
   const { shop } = bundle;
   const [{ stores, products }, settings, clients] = await Promise.all([
     partnerCatalog(shop.currency), shopPartnerSettings(shop.id), clientCount(shop.id),
@@ -49,7 +49,7 @@ export default async function Shopping({ params }: { params: Promise<{ slug: str
           enabled={enabled}
           featured={featured}
           clients={clients}
-          canEdit={role === "owner" || role === "manager"}
+          canEdit={true}
         />
       )}
     </main>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { formatMoney } from "@/core/money";
 import { dayInZone } from "@/core/time";
 import { addMonths, dueAlerts, monthOf, type RevenueMethod } from "@/core/finance";
@@ -17,15 +17,7 @@ export default async function Financeiro({ params, searchParams }: {
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { bundle: b, role } = await requireStaff(slug);
-  if (role !== "owner" && role !== "manager") {
-    return (
-      <main className="mx-auto max-w-md px-6 py-20 text-center">
-        <h1 className="text-xl font-semibold">Só o dono ou o gerente</h1>
-        <p className="mt-2 text-sm text-neutral-500">O financeiro da barbearia fica visível só para o dono e o gerente.</p>
-      </main>
-    );
-  }
+  const { bundle: b } = await requireSection(slug, "financeiro");
   const { shop } = b;
   const thisMonth = monthOf(dayInZone(new Date(), shop.timezone));
   const month = sp.m && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.m) ? sp.m : thisMonth;

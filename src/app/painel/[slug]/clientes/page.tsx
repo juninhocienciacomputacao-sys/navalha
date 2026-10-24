@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import { dayInZone } from "@/core/time";
 import { clientMatches } from "@/core/planboard";
 import { listClients } from "@/modules/clients/data";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Clientes({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { bundle } = await requireStaff(slug);
+  const { bundle } = await requireSection(slug, "clientes");
   const { shop, barbers } = bundle;
   const today = dayInZone(new Date(), shop.timezone);
   const [clients, plans] = await Promise.all([listClients(bundle), listPlans(bundle)]);

@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/staff";
+import { requireSection } from "@/lib/staff";
 import Link from "next/link";
 import { atMinutes, dayInZone, minutesInZone, weekday } from "@/core/time";
 import { daysUntil } from "@/core/plans";
@@ -11,7 +11,7 @@ const PX_PER_MIN = 1.1;
 
 export default async function Painel({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { r, bundle: b } = await requireStaff(slug);
+  const { r, bundle: b } = await requireSection(slug, "painel");
   const { shop, barbers } = b;
   const tz = shop.timezone;
   const now = new Date();

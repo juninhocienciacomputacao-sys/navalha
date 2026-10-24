@@ -67,7 +67,7 @@ export default function Settings({ slug, settings, canEdit, zones }: { slug: str
           Cada barbearia liga só o que quer usar e ajusta do seu jeito. <b>{onCount} de {features.length}</b> recursos ligados agora.
           As mudanças valem na hora no painel, na TV da recepção e no app do cliente.
         </p>
-        {!canEdit && <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">Só o dono ou o gerente podem mudar estas opções.</p>}
+        {!canEdit && <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">Seu nível de acesso não permite mudar estas opções. Peça ao dono.</p>}
       </header>
 
       {GROUPS.map((g) => (

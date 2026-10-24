@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { assertStaff } from "@/lib/staff";
+import { assertStaff, type Staff } from "@/lib/staff";
 import { atMinutes, dayInZone } from "@/core/time";
 import { toHHMM } from "@/core/types";
 import {
@@ -17,6 +17,10 @@ const dayS = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const idS = z.string().min(1).max(64);
 const minutesS = z.number().int().min(0).max(24 * 60);
 
+const FORBIDDEN = { ok: false as const, error: "forbidden" };
+/** Pode mexer na agenda deste barbeiro? (agenda de todos, ou é a própria agenda) */
+const may = (s: Staff, barberId: string) => s.workable.includes(barberId);
+
 const touch = (slug: string) => {
   revalidatePath(`/painel/${slug}/agenda`);
   revalidatePath(`/painel/${slug}`);
@@ -24,7 +28,9 @@ const touch = (slug: string) => {
 };
 
 export async function loadFreeTimes(slug: string, day: string, serviceId: string, barberId: string, exceptId?: string) {
-  const { bundle } = await assertStaff(slugS.parse(slug));
+  const s = await assertStaff(slugS.parse(slug));
+  const { bundle } = s;
+  if (!may(s, barberId)) return [];
   return freeTimes(bundle, dayS.parse(day), idS.parse(serviceId), idS.parse(barberId), exceptId ? idS.parse(exceptId) : undefined);
 }
 
@@ -45,8 +51,10 @@ export async function recentClients(slug: string, limit = 12) {
 
 /** Anotação rápida (ex.: "Chegou atrasado") que vai para a ficha do cliente do atendimento, com a data. */
 export async function noteOnClient(slug: string, apptId: string, note: string) {
-  const { bundle } = await assertStaff(slugS.parse(slug));
+  const s = await assertStaff(slugS.parse(slug));
+  const { bundle } = s;
   const appt = await getAppointment(bundle, idS.parse(apptId));
+  if (appt && !may(s, appt.barberId)) return FORBIDDEN;
   if (!appt?.clientId) return { ok: false as const, error: "Esse atendimento não tem cliente cadastrado." };
   const c = await getClient(bundle, appt.clientId);
   if (!c) return { ok: false as const, error: "Cliente não encontrado." };
@@ -71,7 +79,9 @@ export async function createAppt(input: z.infer<typeof createS>) {
   const parsed = createS.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "name_required" };
   const p = parsed.data;
-  const { bundle } = await assertStaff(p.slug);
+  const s = await assertStaff(p.slug);
+  const { bundle } = s;
+  if (!may(s, p.barberId)) return FORBIDDEN;
   const nb = notBeforeFor(bundle, p.day);
   if (nb === null || (nb > 0 && p.minutes < nb - bundle.shop.slotStepMin)) return { ok: false as const, error: "slot_in_past" };
   const r = await createAppointment(bundle, {
@@ -85,7 +95,11 @@ export async function createAppt(input: z.infer<typeof createS>) {
 const statusS = z.enum(["confirmed", "in_service", "done", "no_show", "cancelled"]);
 
 export async function changeStatus(slug: string, id: string, status: z.infer<typeof statusS>) {
-  const { bundle } = await assertStaff(slugS.parse(slug));
+  const s = await assertStaff(slugS.parse(slug));
+  const { bundle } = s;
+  const appt = await getAppointment(bundle, idS.parse(id));
+  if (!appt) return { ok: false as const, error: "not_found" };
+  if (!may(s, appt.barberId)) return FORBIDDEN;
   const r = await setAppointmentStatus(bundle, idS.parse(id), statusS.parse(status));
   if (r.ok) touch(slug);
   return r;
@@ -95,7 +109,11 @@ const moveS = z.object({ slug: slugS, id: idS, day: dayS, minutes: minutesS, bar
 
 export async function reschedule(input: z.infer<typeof moveS>) {
   const p = moveS.parse(input);
-  const { bundle } = await assertStaff(p.slug);
+  const s = await assertStaff(p.slug);
+  const { bundle } = s;
+  const appt = await getAppointment(bundle, p.id);
+  if (!appt) return { ok: false as const, error: "not_found" };
+  if (!may(s, appt.barberId) || !may(s, p.barberId)) return FORBIDDEN;
   if (notBeforeFor(bundle, p.day) === null) return { ok: false as const, error: "slot_in_past" };
   const r = await rescheduleAppointment(bundle, p.id, p.barberId, atMinutes(p.day, p.minutes, bundle.shop.timezone));
   if (r.ok) touch(p.slug);
@@ -108,14 +126,18 @@ export async function queueAdd(input: z.infer<typeof queueS>) {
   const parsed = queueS.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "name_required" };
   const p = parsed.data;
-  const { bundle } = await assertStaff(p.slug);
+  const s = await assertStaff(p.slug);
+  if (s.access.agenda !== "all") return FORBIDDEN;
+  const { bundle } = s;
   const r = await addToQueue(bundle, { name: p.name, serviceId: p.serviceId, clientId: p.clientId });
   if (r.ok) touch(p.slug);
   return r;
 }
 
 export async function queueLeave(slug: string, id: string) {
-  const { bundle } = await assertStaff(slugS.parse(slug));
+  const s = await assertStaff(slugS.parse(slug));
+  if (s.access.agenda !== "all") return FORBIDDEN;
+  const { bundle } = s;
   const r = await closeQueueEntry(bundle, idS.parse(id), "left");
   if (r.ok) touch(slug);
   return r;
@@ -126,7 +148,9 @@ export async function queueLeave(slug: string, id: string) {
  * (ou no lugar escolhido), cria o atendimento como "encaixe" e tira da fila.
  */
 export async function queueCall(slug: string, id: string, target?: { barberId: string; minutes: number }) {
-  const { bundle } = await assertStaff(slugS.parse(slug));
+  const s = await assertStaff(slugS.parse(slug));
+  if (s.access.agenda !== "all") return FORBIDDEN;
+  const { bundle } = s;
   const q = await getQueueEntry(bundle, idS.parse(id));
   if (!q) return { ok: false as const, error: "not_found" };
   const tz = bundle.shop.timezone;

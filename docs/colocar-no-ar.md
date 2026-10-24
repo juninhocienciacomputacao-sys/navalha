@@ -64,6 +64,21 @@ O código de entrada é enviado pela **Twilio**, empresa que o Supabase usa para
 
 Daqui em diante o painel só abre para a equipe da barbearia, e o cliente confirma o agendamento entrando com o WhatsApp.
 
+## Parte 4: níveis de acesso da equipe
+
+Para o banco que já está no ar, rode a atualização uma vez (não apaga nada):
+
+1. No Supabase, abra **SQL Editor → New query**.
+2. Copie todo o conteúdo de `supabase/migrations/0011_team_access.sql` (no GitHub, botão "Copy raw file"), cole e clique em **Run**. Pode rodar de novo sem problema.
+
+Depois, no painel, entre como dono e abra **Acessos**:
+
+- **Dar acesso a alguém**: digite o WhatsApp da pessoa, escolha o nível (Dono, Gerente, Recepção ou Barbeiro) e, se ela corta cabelo, qual barbeiro ela é. Quando a pessoa entrar em `/painel` com esse WhatsApp e o código, já cai no painel com o nível escolhido.
+- **O que cada nível vê**: escolha a agenda (de todos, só a sua + horários livres, ou só a sua) e ligue as telas de cada nível. Vale na hora.
+- **Testar como**: mostra o painel do jeito que o gerente, a recepção ou cada barbeiro vê, sem precisar de outro celular.
+
+Enquanto o login pelo WhatsApp estiver no plano grátis, dá para testar com números de teste do Supabase: em **Authentication → Sign In / Providers → Phone → Test Phone Numbers and OTPs**, cadastre por exemplo `5562900000001=123456`. Esse número entra com o código `123456` sem mandar mensagem nenhuma. Use o mesmo número (com DDD) ao dar acesso em **Acessos**.
+
 ## O que nunca compartilhar
 
 - A senha do banco.

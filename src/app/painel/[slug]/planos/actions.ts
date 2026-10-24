@@ -5,8 +5,7 @@ import { z } from "zod";
 import { assertStaff } from "@/lib/staff";
 import { cancelSubscription, registerPayment, savePlan, sellPlan, setAlertDays, setPlanActive } from "@/modules/plans/data";
 
-/** Dinheiro e configuração: só dono e gerente. */
-const MONEY = ["owner", "manager"] as const;
+// Quem pode: o nível precisa ter a tela Planos liberada pelo dono.
 const id = z.string().min(1).max(64);
 const method = z.enum(["pix", "card", "cash"]);
 
@@ -27,7 +26,7 @@ const planSchema = z.object({
 });
 
 export async function savePlanAction(slug: string, input: z.input<typeof planSchema>) {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "planos");
   const p = planSchema.safeParse(input);
   if (!p.success) return fail(p.error);
   const valid = new Set(bundle.services.map((s) => s.id));
@@ -37,14 +36,14 @@ export async function savePlanAction(slug: string, input: z.input<typeof planSch
 }
 
 export async function togglePlanAction(slug: string, planId: string, active: boolean) {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "planos");
   const r = await setPlanActive(bundle, id.parse(planId), z.boolean().parse(active));
   if (r.ok) done(slug);
   return r;
 }
 
 export async function payAction(slug: string, subId: string, how: string) {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "planos");
   const p = z.object({ subId: id, how: method }).safeParse({ subId, how });
   if (!p.success) return fail(p.error);
   const r = await registerPayment(bundle, p.data.subId, p.data.how);
@@ -55,7 +54,7 @@ export async function payAction(slug: string, subId: string, how: string) {
 const sellSchema = z.object({ clientId: id, planId: id, barberId: id.nullable(), method });
 
 export async function sellAction(slug: string, input: z.input<typeof sellSchema>) {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "planos");
   const p = sellSchema.safeParse(input);
   if (!p.success) return { ok: false as const, error: "Escolha o cliente, o plano e a forma de pagamento." };
   const r = await sellPlan(bundle, p.data);
@@ -64,14 +63,14 @@ export async function sellAction(slug: string, input: z.input<typeof sellSchema>
 }
 
 export async function cancelAction(slug: string, subId: string) {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "planos");
   const r = await cancelSubscription(bundle, id.parse(subId));
   if (r.ok) done(slug);
   return r;
 }
 
 export async function alertDaysAction(slug: string, days: number) {
-  const { bundle } = await assertStaff(slug, [...MONEY]);
+  const { bundle } = await assertStaff(slug, "planos");
   const p = z.number().int().min(0).max(30).safeParse(days);
   if (!p.success) return { ok: false as const, error: "Use de 0 a 30 dias." };
   const r = await setAlertDays(bundle, p.data);
