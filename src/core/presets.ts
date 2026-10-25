@@ -78,3 +78,35 @@ export const APPT_NOTE_PRESETS = ["Chegou atrasado", "Pediu desconto", "Primeira
 export const BARBER_ROLE_PRESETS = ["Corte clássico", "Degradê", "Barba e navalha", "Corte infantil", "Química e coloração", "Desenhos e freestyle", "Barbeiro sênior", "Aprendiz"];
 /** Metas de faturamento mensal por barbeiro (BRL; use suggest para outras moedas). */
 export const GOAL_PRESETS = [3000, 5000, 8000, 10000, 12000, 15000, 20000, 30000];
+
+/**
+ * Modelos de plano para começar rápido. O dono escolhe um, ajusta e escolhe os serviços.
+ * `price` em BRL (use `suggest` para outras moedas).
+ */
+export const PLAN_TEMPLATES = [
+  {
+    id: "semanal", title: "Toda semana", pitch: "Ilimitado, 1 uso a cada 7 dias. Fideliza quem corta toda semana sem lotar a agenda.",
+    name: "Clube semanal", price: 119.9, periodDays: 30, quotaUses: null,
+    rules: { minDaysBetween: 7 },
+  },
+  {
+    id: "executivo", title: "Executivo (horário vazio)", pitch: "Segunda a quinta, das 9h às 16h. Enche os horários de menor movimento.",
+    name: "Plano executivo", price: 79.9, periodDays: 30, quotaUses: 4,
+    rules: { weekdays: [1, 2, 3, 4], hours: { start: 9 * 60, end: 16 * 60 } },
+  },
+  {
+    id: "quinzenal", title: "Quinzenal econômico", pitch: "2 cortes no mês, com pelo menos 14 dias entre eles.",
+    name: "2 cortes por mês", price: 69.9, periodDays: 30, quotaUses: 2,
+    rules: { minDaysBetween: 14 },
+  },
+  {
+    id: "vip", title: "VIP exclusivo", pitch: "Não aparece no app: a equipe oferece a quem você escolher. Poucas vagas.",
+    name: "Plano VIP", price: 249.9, periodDays: 30, quotaUses: null,
+    rules: { exclusive: true, maxSubscribers: 10, minDaysBetween: 3 },
+  },
+  {
+    id: "fim_de_semana", title: "Fim de semana", pitch: "Para quem só pode no sábado. 1 uso por semana.",
+    name: "Plano sábado", price: 99.9, periodDays: 30, quotaUses: 4,
+    rules: { weekdays: [6], minDaysBetween: 7 },
+  },
+] as const;

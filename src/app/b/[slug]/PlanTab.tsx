@@ -9,6 +9,8 @@ import { fill, tx, type Dict } from "@/i18n";
 import type { ClientHome, MyPlan } from "@/modules/client-app/types";
 import { checkPayment, payPlan } from "./actions";
 import { Bar, BigButton, Icon, Label, LoginCard, PlanCard, shortDate, statusText } from "./ui";
+import { rulesOf } from "@/core/plan-rules";
+import { ruleLines } from "@/modules/plans/describe";
 
 interface Common { bundle: ShopBundle; lang: Lang; L: Dict; today: string; demoAs?: string }
 
@@ -16,6 +18,7 @@ export default function PlanTab({ bundle, lang, L, home, loginHref, onPay, onBoo
   home: ClientHome | null; loginHref: string; onPay: () => void; onBook: () => void;
 }) {
   const money = (v: number) => formatMoney(v, bundle.shop.currency, lang);
+  const barberName = (id: string) => bundle.barbers.find((b) => b.id === id)?.name;
   if (!home) {
     return (<div><h1 className="mb-4 text-2xl font-bold tracking-tight">{L.tab_plan}</h1><LoginCard L={L} href={loginHref} /></div>);
   }
@@ -27,17 +30,30 @@ export default function PlanTab({ bundle, lang, L, home, loginHref, onPay, onBoo
         <p className="mt-4 font-semibold">{L.no_plan}</p>
         <p className="text-sm text-neutral-500">{L.no_plan_sub}</p>
         <div className="mt-3 space-y-2">
-          {bundle.plans.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-              <span>
-                <b className="block">{p.name}</b>
-                <small className="text-neutral-500">
-                  {p.quotaUses === null ? L.unlimited : `${p.quotaUses}×`} · {fill(L.per_cycle, { n: String(p.periodDays) })}
-                </small>
-              </span>
-              <b className="tabular-nums">{money(p.price)}</b>
-            </div>
-          ))}
+          {/* plano exclusivo não aparece aqui: só a equipe oferece */}
+          {bundle.plans.filter((p) => !rulesOf(p).exclusive).map((p) => {
+            const r = rulesOf(p);
+            const lines = ruleLines(r, lang, barberName);
+            return (
+              <div key={p.id} className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <b className="block">{p.name}</b>
+                    {r.description && <small className="block text-neutral-600 dark:text-neutral-300">{r.description}</small>}
+                    <small className="text-neutral-500">
+                      {p.quotaUses === null ? L.unlimited : `${p.quotaUses}×`} · {fill(L.per_cycle, { n: String(p.periodDays) })}
+                    </small>
+                  </span>
+                  <b className="shrink-0 tabular-nums">{money(p.price)}</b>
+                </div>
+                {lines.length > 0 && (
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {lines.map((l) => <li key={l} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{l}</li>)}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </div>
         <BigButton className="mt-4" onClick={onBook}>{L.book_now}</BigButton>
       </div>
@@ -85,6 +101,15 @@ export default function PlanTab({ bundle, lang, L, home, loginHref, onPay, onBoo
         </li>
         {covered.map((s) => <li key={s.id} className="flex items-center gap-2"><Icon name="check" className="size-4 text-emerald-600" />{tx(s.name, lang)}</li>)}
       </ul>
+
+      {ruleLines(plan.rules, lang, barberName).length > 0 && (
+        <>
+          <Label>{L.plan_rules_t}</Label>
+          <ul className="space-y-1.5 rounded-2xl border border-neutral-200 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+            {ruleLines(plan.rules, lang, barberName).map((l) => <li key={l} className="flex items-center gap-2"><Icon name="clock" className="size-4 text-amber-600" />{l}</li>)}
+          </ul>
+        </>
+      )}
 
       <Label>{L.payments}</Label>
       {home.payments.length === 0 ? <p className="text-sm text-neutral-500">{L.no_payments}</p> : (

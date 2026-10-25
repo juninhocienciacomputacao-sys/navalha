@@ -20,15 +20,18 @@ const bundle: ShopBundle = demoGlobal("bundle", (): ShopBundle => ({
     { id: "b-nina", name: "Nina", roleTitle: "Química e platinado", color: "#be185d", photo: null },
   ],
   services: [
-    { id: "s-corte", name: { pt: "Corte", en: "Haircut", es: "Corte" }, durationMin: 40, price: 50, planIds: ["p-club", "p-full"] },
-    { id: "s-barba", name: { pt: "Barba", en: "Beard", es: "Barba" }, durationMin: 30, price: 40, planIds: ["p-full"] },
-    { id: "s-combo", name: { pt: "Corte + barba", en: "Haircut + beard", es: "Corte + barba" }, durationMin: 60, price: 80, planIds: ["p-full"] },
-    { id: "s-pezinho", name: { pt: "Pezinho", en: "Neck trim", es: "Perfilado" }, durationMin: 15, price: 20, planIds: ["p-club", "p-full"] },
+    { id: "s-corte", name: { pt: "Corte", en: "Haircut", es: "Corte" }, durationMin: 40, price: 50, planIds: ["p-club", "p-full", "p-vip"] },
+    { id: "s-barba", name: { pt: "Barba", en: "Beard", es: "Barba" }, durationMin: 30, price: 40, planIds: ["p-full", "p-vip"] },
+    { id: "s-combo", name: { pt: "Corte + barba", en: "Haircut + beard", es: "Corte + barba" }, durationMin: 60, price: 80, planIds: ["p-full", "p-vip"] },
+    { id: "s-pezinho", name: { pt: "Pezinho", en: "Neck trim", es: "Perfilado" }, durationMin: 15, price: 20, planIds: ["p-club", "p-full", "p-vip"] },
     { id: "s-luzes", name: { pt: "Luzes", en: "Highlights", es: "Mechas" }, durationMin: 90, price: 150, planIds: [] },
   ],
   plans: [
-    { id: "p-club", name: "Clube do Corte", price: 89.9, quotaUses: 4, periodDays: 30 },
+    { id: "p-club", name: "Clube do Corte", price: 89.9, quotaUses: 4, periodDays: 30,
+      rules: { minDaysBetween: 7, description: "Um corte por semana, sempre em dia" } },
     { id: "p-full", name: "Corte + Barba Ilimitado", price: 149.9, quotaUses: null, periodDays: 30 },
+    { id: "p-vip", name: "Black VIP", price: 249.9, quotaUses: null, periodDays: 30,
+      rules: { exclusive: true, maxSubscribers: 12, barberIds: ["b-rafa", "b-leo"], minDaysBetween: 3, onLimit: "block", description: "Só para convidados da casa" } },
   ],
   walkIn: { enabled: true, perPeakHour: 2, peakStarts: [11 * 60, 17 * 60, 18 * 60, 19 * 60], blockMin: 45 },
 }));
@@ -118,7 +121,9 @@ function seed() {
         const fill = d < 0 ? 0.75 : d === 0 ? 0.6 : 0.45 - d * 0.05;
         const svc = bundle.services[Math.floor(r() * 4)];
         if (r() < fill && t + svc.durationMin <= ch * 60) {
-          const n = Math.floor(r() * store.clients.length);
+          let n = Math.floor(r() * store.clients.length);
+          // os clientes do "Ver como" começam sem horário futuro, para dar para testar o agendamento
+          if (d >= 0 && n < 2) n += 2;
           const client = store.clients[n];
           const sub = store.subscriptions.find((x) => x.clientId === client.id && svc.planIds.includes(x.planId));
           const viaPlan = Boolean(sub) && r() < 0.8;

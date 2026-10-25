@@ -23,6 +23,17 @@ const planSchema = z.object({
   periodDays: z.number({ message: "Ciclo inválido." }).int("O ciclo é em dias inteiros.").min(1, "O ciclo precisa ter pelo menos 1 dia.").max(366),
   quotaUses: z.number().int("A cota é um número inteiro.").min(1, "A cota precisa ser 1 ou mais (vazio = ilimitado).").max(999).nullable(),
   serviceIds: z.array(id).max(100),
+  rules: z.object({
+    minDaysBetween: z.number().int("O intervalo é em dias inteiros.").min(1, "Intervalo mínimo: 1 dia.").max(365, "Intervalo máximo: 365 dias.").nullable(),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1, "Escolha pelo menos um dia da semana.").max(7).nullable(),
+    hours: z.object({ start: z.number().int().min(0).max(1439), end: z.number().int().min(1).max(1440) })
+      .refine((h) => h.end > h.start, "O horário final precisa ser depois do inicial.").nullable(),
+    barberIds: z.array(id).min(1, "Escolha pelo menos um barbeiro.").max(100).nullable(),
+    onLimit: z.enum(["charge", "block"]),
+    exclusive: z.boolean(),
+    maxSubscribers: z.number().int("As vagas são um número inteiro.").min(1, "Pelo menos 1 vaga.").max(100000).nullable(),
+    description: z.string().trim().max(120, "Frase curta: até 120 letras.").nullable(),
+  }),
 });
 
 export async function savePlanAction(slug: string, input: z.input<typeof planSchema>) {
@@ -30,7 +41,12 @@ export async function savePlanAction(slug: string, input: z.input<typeof planSch
   const p = planSchema.safeParse(input);
   if (!p.success) return fail(p.error);
   const valid = new Set(bundle.services.map((s) => s.id));
-  const r = await savePlan(bundle, { ...p.data, serviceIds: p.data.serviceIds.filter((s) => valid.has(s)) });
+  const team = new Set(bundle.barbers.map((x) => x.id));
+  const rules = { ...p.data.rules, weekdays: p.data.rules.weekdays ? [...new Set(p.data.rules.weekdays)].sort() : null };
+  if (rules.barberIds) rules.barberIds = rules.barberIds.filter((x) => team.has(x));
+  if (rules.barberIds && !rules.barberIds.length) rules.barberIds = null;
+  if (rules.weekdays?.length === 7) rules.weekdays = null;
+  const r = await savePlan(bundle, { ...p.data, rules, serviceIds: p.data.serviceIds.filter((s) => valid.has(s)) });
   if (r.ok) done(slug);
   return r;
 }

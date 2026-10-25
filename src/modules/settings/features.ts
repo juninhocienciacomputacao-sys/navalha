@@ -5,7 +5,7 @@ import type { ModuleKey } from "@/core/modules";
 
 export type FeatureKey =
   | "ai_receptionist" | "style_passport" | "autofill" | "qr_checkin" | "referral"
-  | "rebook" | "no_show_deposit" | "network" | "walk_in";
+  | "rebook" | "no_show_deposit" | "network" | "walk_in" | "booking_limit";
 
 export type FieldDef =
   | { key: string; label: string; type: "bool" }
@@ -48,6 +48,16 @@ export const FEATURES: FeatureDef[] = [
     key: "walk_in", group: "agenda", title: "Encaixes sem horário",
     description: "Guarda vagas nos horários de pico para quem chega sem marcar, com fila virtual. Ajuste os horários de pico mais abaixo.",
     defaultOn: true, defaults: {}, fields: [],
+  },
+  {
+    key: "booking_limit", group: "agenda", title: "Um horário por vez",
+    description: "O cliente não marca dois horários ao mesmo tempo nem guarda vários horários em aberto. Assim ninguém segura a agenda. A recepção pode marcar mais quando precisar.",
+    defaultOn: true, defaults: { maxUpcoming: 1, onePerDay: true },
+    fields: [
+      { key: "maxUpcoming", label: "Horários em aberto por cliente", type: "number", min: 1, max: 10, suffix: "horário(s)" },
+      { key: "onePerDay", label: "No máximo um horário por dia", type: "bool" },
+    ],
+    note: "Vale no app do cliente e também no banco de dados (não dá para furar mandando o pedido direto).",
   },
   {
     key: "autofill", group: "agenda", title: "Agenda que se preenche sozinha",

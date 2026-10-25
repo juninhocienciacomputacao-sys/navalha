@@ -6,10 +6,14 @@ import type { Plan } from "@/core/types";
 import { dayInZone } from "@/core/time";
 import { firstCycle, renewOnPayment } from "@/core/planboard";
 import { demoGlobal } from "@/data/demo-global";
+import { rulesOf, type PlanRules } from "@/core/plan-rules";
+import { PLAN_RULE_COLUMNS, rulesFromRow, rulesToRow, type PlanRuleRow } from "@/data/plan-row";
 
 export type PayMethod = "pix" | "card" | "cash";
 
 export interface PlanItem extends Plan {
+  /** Regras completas (sem campos faltando). */
+  rules: PlanRules;
   active: boolean;
   /** Serviços que o plano cobre. */
   serviceIds: string[];
@@ -35,6 +39,7 @@ export interface PlanInput {
   periodDays: number;
   quotaUses: number | null;
   serviceIds: string[];
+  rules: PlanRules;
 }
 
 export type Result = { ok: true; id?: string } | { ok: false; error: string };
@@ -60,24 +65,24 @@ export async function listPlans(b: ShopBundle): Promise<PlanItem[]> {
     const { bundle } = demoSeed();
     const cover = (id: string) => bundle.services.filter((s) => s.planIds.includes(id)).map((s) => s.id);
     return [
-      ...bundle.plans.map((p) => ({ ...p, active: true, serviceIds: cover(p.id) })),
-      ...demoInactive.map((p) => ({ ...p, active: false, serviceIds: cover(p.id) })),
+      ...bundle.plans.map((p) => ({ ...p, rules: rulesOf(p), active: true, serviceIds: cover(p.id) })),
+      ...demoInactive.map((p) => ({ ...p, rules: rulesOf(p), active: false, serviceIds: cover(p.id) })),
     ];
   }
   const db = await supabaseServer();
   const { data, error } = await db.from("plans")
-    .select("id, name, price, quota_uses, period_days, active, plan_services(service_id)")
+    .select(`id, name, price, quota_uses, period_days, active, ${PLAN_RULE_COLUMNS}, plan_services(service_id)`)
     .eq("shop_id", b.shop.id).order("price");
   if (error) throw new Error(error.message);
-  type Row = { id: string; name: string; price: number; quota_uses: number | null; period_days: number; active: boolean; plan_services: { service_id: string }[] };
+  type Row = PlanRuleRow & { id: string; name: string; price: number; quota_uses: number | null; period_days: number; active: boolean; plan_services: { service_id: string }[] };
   return ((data ?? []) as Row[]).map((p) => ({
-    id: p.id, name: p.name, price: Number(p.price), quotaUses: p.quota_uses, periodDays: p.period_days, active: p.active,
+    id: p.id, name: p.name, price: Number(p.price), quotaUses: p.quota_uses, periodDays: p.period_days, active: p.active, rules: rulesFromRow(p),
     serviceIds: (p.plan_services ?? []).map((x) => x.service_id),
   }));
 }
 
 export async function savePlan(b: ShopBundle, input: PlanInput): Promise<Result> {
-  const fields = { name: input.name, price: input.price, quotaUses: input.quotaUses, periodDays: input.periodDays };
+  const fields = { name: input.name, price: input.price, quotaUses: input.quotaUses, periodDays: input.periodDays, rules: input.rules };
   if (!supabaseConfigured()) {
     const { bundle } = demoSeed();
     let id = input.id;
@@ -98,7 +103,7 @@ export async function savePlan(b: ShopBundle, input: PlanInput): Promise<Result>
     return { ok: true, id };
   }
   const db = await supabaseServer();
-  const row = { name: input.name, price: input.price, quota_uses: input.quotaUses, period_days: input.periodDays };
+  const row = { name: input.name, price: input.price, quota_uses: input.quotaUses, period_days: input.periodDays, ...rulesToRow(input.rules) };
   let id = input.id;
   if (id) {
     const { error } = await db.from("plans").update(row).eq("id", id).eq("shop_id", b.shop.id);
@@ -208,6 +213,10 @@ export async function sellPlan(b: ShopBundle, input: { clientId: string; planId:
   if (input.barberId && !b.barbers.some((x) => x.id === input.barberId)) return { ok: false, error: "Barbeiro não encontrado." };
   const open = await listSubscriptions(b, { clientId: input.clientId });
   if (open.length) return { ok: false, error: "Este cliente já tem um plano. Para renovar use “Registrar pagamento”, ou cancele o atual antes." };
+  if (plan.rules.maxSubscribers) {
+    const taken = (await listSubscriptions(b)).filter((s) => s.planId === plan.id && s.periodEnd >= today(b)).length;
+    if (taken >= plan.rules.maxSubscribers) return { ok: false, error: `As ${plan.rules.maxSubscribers} vagas deste plano estão ocupadas. Aumente as vagas no plano para vender mais.` };
+  }
   const cycle = firstCycle(plan, today(b));
   const now = new Date();
   if (!supabaseConfigured()) {

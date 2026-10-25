@@ -11,6 +11,7 @@ import type { StatAppointment } from "@/core/barberStats";
 import { FEATURES, withDefaults, type FeatureKey, type FeatureState } from "./features";
 import type { Modules } from "@/core/modules";
 import { demoGlobal } from "@/data/demo-global";
+import { DEFAULT_BOOKING_LIMIT, type BookingLimit } from "@/core/plan-rules";
 
 export interface TeamBarber {
   id: string;
@@ -415,6 +416,23 @@ export async function saveModules(shopId: string, modules: Modules) {
  * Liga/desliga de "sugerir o próximo horário" e quantos dias depois, para o app do cliente
  * (o banco deixa qualquer um ler só a linha "rebook" dos recursos).
  */
+/** Limite de agendamentos por cliente (Recursos → "Um horário por vez"). O app do cliente também pode ler. */
+export async function bookingLimitSetting(shopId: string): Promise<BookingLimit> {
+  let row: { key: string; enabled: boolean; config: unknown } | undefined;
+  if (!sb()) row = demo.features.find((f) => f.key === "booking_limit");
+  else {
+    const db = await supabaseServer();
+    const { data } = await db.from("shop_features").select("key, enabled, config").eq("shop_id", shopId).eq("key", "booking_limit").maybeSingle();
+    row = data ?? undefined;
+  }
+  const st = withDefaults(row ? [row] : []).find((f) => f.key === "booking_limit")!;
+  return {
+    on: st.enabled,
+    maxUpcoming: Math.max(1, Number(st.config.maxUpcoming) || DEFAULT_BOOKING_LIMIT.maxUpcoming),
+    onePerDay: st.config.onePerDay !== false,
+  };
+}
+
 export async function rebookSetting(shopId: string): Promise<{ on: boolean; days: number }> {
   const def = FEATURES.find((f) => f.key === "rebook")!;
   let row: { key: string; enabled: boolean; config: unknown } | undefined;

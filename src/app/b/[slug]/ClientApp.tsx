@@ -9,6 +9,7 @@ import { formatMoney } from "@/core/money";
 import { fill, LANGS, t, tx, type Dict } from "@/i18n";
 import type { ClientHome, MyAppointment, Viewer } from "@/modules/client-app/types";
 import type { ClientCatalog } from "@/modules/shopping/types";
+import type { BookingLimit } from "@/core/plan-rules";
 import { nextStepIndex } from "@/modules/client-app/style";
 import { cancelAppointment, confirmBooking } from "./actions";
 import Booking, { type BookPreset } from "./Booking";
@@ -23,6 +24,8 @@ type Screen = null | { k: "pay" } | { k: "style" } | { k: "project"; id: string 
 export interface AppProps {
   bundle: ShopBundle; lang: Lang; today: string; initial: DaySlots; viewer: Viewer;
   home: ClientHome | null; catalog: ClientCatalog | null; initialTab: Tab; hour: number;
+  /** Limite de horários em aberto por cliente (Recursos → "Um horário por vez"). */
+  limit: BookingLimit;
 }
 
 export default function ClientApp(p: AppProps) {
@@ -70,7 +73,8 @@ export default function ClientApp(p: AppProps) {
       : <p className="py-10 text-center text-sm text-neutral-500">…</p>;
   } else if (tab === "book") {
     body = <Booking key={bookKey} bundle={bundle} lang={lang} today={p.today} initial={p.initial} demoAs={demoAs} loggedIn={loggedIn}
-      defaultName={home?.me.name} plan={home?.plan ?? null} preset={preset} onHome={() => go("home")} />;
+      defaultName={home?.me.name} plan={home?.plan ?? null} preset={preset} onHome={() => go("home")}
+      limit={p.limit} upcoming={home?.upcoming ?? []} />;
   } else if (tab === "plan" && mods.planos) {
     body = <PlanTab {...common} home={home} loginHref={loginHref} onPay={() => open({ k: "pay" })} onBook={() => book(null)} />;
   } else if (tab === "shop" && mods.shopping) {

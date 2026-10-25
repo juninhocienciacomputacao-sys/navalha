@@ -1,3 +1,5 @@
+import type { PlanRules } from "./plan-rules";
+
 /** Minutos desde a meia-noite, no fuso da barbearia. Ex.: 9h30 = 570. */
 export type Minutes = number;
 
@@ -27,6 +29,8 @@ export interface Plan {
   /** Quantos atendimentos o plano dá por ciclo. `null` = ilimitado. */
   quotaUses: number | null;
   periodDays: number;
+  /** Regras de uso definidas pelo dono (intervalo, dias, horário, barbeiros, exclusivo). Ver src/core/plan-rules.ts. */
+  rules?: Partial<PlanRules>;
 }
 
 export const toMinutes = (hhmm: string): Minutes => {
