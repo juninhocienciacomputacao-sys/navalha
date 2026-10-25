@@ -7,6 +7,7 @@ import type { Lang } from "@/core/types";
 import { toHHMM } from "@/core/types";
 import { addDays, weekday } from "@/core/time";
 import { formatMoney } from "@/core/money";
+import { isFullName } from "@/core/phone";
 import { fill, locale, t, tx } from "@/i18n";
 import type { MyAppointment, MyPlan } from "@/modules/client-app/types";
 import { checkBookingLimit, checkPlanUse, hasUseRules, nextUseDay, type BookingLimit, type PlanCheck } from "@/core/plan-rules";
@@ -123,6 +124,8 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
   function confirm() {
     if (!pick) return;
     setError("");
+    // primeiro agendamento: o cadastro na barbearia nasce aqui, com o WhatsApp já confirmado e o nome completo
+    if (!defaultName && !isFullName(name)) return setError(L.full_name);
     start(async () => {
       const r = await confirmBooking({ slug: shop.slug, as: demoAs, day, minutes: pick.minutes, serviceId, barberId: pick.barberId, name: name || defaultName || "" });
       if (r.ok) setDone({ ...pick, day });
@@ -403,7 +406,8 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
           {loggedIn && !defaultName && (
             <>
               <Label>{L.yourName}</Label>
-              <input className="input py-3 text-base" placeholder={L.yourName} value={name} onChange={(e) => setName(e.target.value)} />
+              <input className="input py-3 text-base" placeholder={L.yourName} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
+              <p className="mt-1.5 text-xs text-neutral-500">{L.fullNameHint}</p>
             </>
           )}
           {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}

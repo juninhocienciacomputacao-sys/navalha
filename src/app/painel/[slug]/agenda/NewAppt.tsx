@@ -11,6 +11,9 @@ import type { ClientLite } from "@/modules/agenda/data";
 import type { FreeTime } from "@/modules/agenda/plan";
 import { createAppt, findClients, loadFreeTimes, recentClients } from "./actions";
 import { addClient } from "../clientes/actions";
+import { SamePhoneNotice, usePhoneOwner } from "../clientes/SamePhone";
+import { isFullName } from "@/core/phone";
+import type { SameClient } from "@/modules/clients/data";
 import Sheet, { Label } from "./Sheet";
 
 export interface NewPreset {
@@ -112,7 +115,12 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
   const [day, setDay] = useState(preset.day < today ? today : preset.day);
   const [minutes, setMinutes] = useState<number | null>(preset.minutes ?? null);
   const [error, setError] = useState("");
+  const [dup, setDup] = useState<SameClient | null>(null);
   const [pending, start] = useTransition();
+  const live = usePhoneOwner(slug, mode === "new" ? phone : "");
+  const owner = mode === "new" ? live ?? dup : null;
+  /** O número já é de um cliente: usa esse cadastro em vez de criar outro. */
+  const pickOwner = (c: SameClient) => { setClient({ id: c.id, name: c.name, phone: c.phone }); setMode("client"); setPhone(""); setDup(null); setError(""); };
 
   useEffect(() => {
     let alive = true;
@@ -126,7 +134,7 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
     return () => clearTimeout(t);
   }, [q, mode, slug]);
 
-  const ready = Boolean(serviceId && barberId && minutes !== null && (mode === "client" ? client : name.trim()));
+  const ready = Boolean(serviceId && barberId && minutes !== null && (mode === "client" ? client : name.trim() && !owner));
   const searching = q.trim().length >= 2;
   const list = searching ? found : recent ?? [];
 
@@ -136,8 +144,12 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
     start(async () => {
       let clientId = mode === "client" ? client?.id ?? null : null;
       if (mode === "new" && phone.trim()) {
+        if (!isFullName(name)) { setError("Para cadastrar, escreva o nome completo (nome e sobrenome)."); return; }
         const c = await addClient(slug, { name: name.trim(), phone });
-        if (!c.ok) { setError(c.error); return; }
+        if (!c.ok) {
+          if (c.existing) setDup(c.existing); else setError(c.error);
+          return;
+        }
         clientId = c.id ?? null;
       }
       const r = await createAppt({
@@ -177,9 +189,10 @@ export default function NewAppt({ slug, today, barbers, services, preset, onClos
             <p className="text-sm font-semibold">Novo cliente</p>
             <button type="button" className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400" onClick={() => setMode("client")}>voltar para a lista</button>
           </div>
-          <input className="input" autoFocus placeholder="Nome do cliente" aria-label="Nome do cliente" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="input" placeholder="WhatsApp (opcional)" aria-label="WhatsApp" inputMode="tel" maxLength={25} value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <p className="text-xs text-neutral-500">Com WhatsApp, o cliente já fica cadastrado. Sem, marca só com o nome.</p>
+          <input className="input" autoFocus placeholder="WhatsApp (opcional)" aria-label="WhatsApp" inputMode="tel" maxLength={25} value={phone} onChange={(e) => { setPhone(e.target.value); setDup(null); }} />
+          {owner && <SamePhoneNotice slug={slug} owner={owner} onUse={pickOwner} />}
+          <input className="input" placeholder={phone.trim() ? "Nome completo" : "Nome do cliente"} aria-label="Nome do cliente" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+          <p className="text-xs text-neutral-500">Com WhatsApp e nome completo, o cliente já fica cadastrado (cada número é de um cliente só). Sem WhatsApp, marca só com o nome.</p>
         </div>
       )}
 

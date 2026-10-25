@@ -148,6 +148,13 @@ async function demoHome(c: Ctx, clientId: string): Promise<ClientHome | null> {
   };
 }
 
+/** Cadastro do cliente nesta barbearia pelo WhatsApp (o número é único por barbearia). */
+export async function clientIdByPhone(shopId: string, phone: string): Promise<string | null> {
+  const db = await supabaseServer();
+  const { data } = await db.from("clients").select("id").eq("shop_id", shopId).eq("phone_e164", phone).maybeSingle();
+  return data?.id ?? null;
+}
+
 async function supabaseHome(c: Ctx, phone: string): Promise<ClientHome | null> {
   const db = await supabaseServer();
   const shopId = c.b.shop.id;
