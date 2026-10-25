@@ -7,6 +7,7 @@ import { fmtPhone } from "@/modules/clients/ui";
 import { Choice, Toggle } from "@/components/pick";
 import { CLIENT_NOTE_PRESETS, CLIENT_PREF_PRESETS } from "@/core/presets";
 import NoteChips from "./NoteChips";
+import { SamePhoneNotice, usePhoneOwner } from "../SamePhone";
 
 export default function ClientForm({ slug, barbers, client }: {
   slug: string; barbers: BarberInfo[];
@@ -20,6 +21,7 @@ export default function ClientForm({ slug, barbers, client }: {
   const [consent, setConsent] = useState(Boolean(client.photoConsentAt));
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
+  const owner = usePhoneOwner(slug, phone, client.id);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,13 +37,14 @@ export default function ClientForm({ slug, barbers, client }: {
     <form onSubmit={submit} className="card space-y-3">
       <h2 className="font-semibold">Cadastro e preferências</h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm"><span className={label}>Nome</span>
+        <label className="text-sm"><span className={label}>Nome completo</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <label className="text-sm"><span className={label}>WhatsApp</span>
           <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" required />
         </label>
       </div>
+      {owner && <SamePhoneNotice slug={slug} owner={owner} />}
       <div className="text-sm"><span className={label}>Barbeiro preferido</span>
         <Choice name="Barbeiro preferido" value={barberId} onChange={setBarberId}
           options={[{ value: "", label: "Sem preferência" }, ...barbers.map((b) => ({
@@ -65,7 +68,7 @@ export default function ClientForm({ slug, barbers, client }: {
         </span>
       </div>
       <div className="flex items-center gap-3">
-        <button className="btn" disabled={pending}>{pending ? "Salvando…" : "Salvar"}</button>
+        <button className="btn" disabled={pending || Boolean(owner)}>{pending ? "Salvando…" : "Salvar"}</button>
         {msg && <span className={`text-sm ${msg.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{msg.text}</span>}
       </div>
     </form>

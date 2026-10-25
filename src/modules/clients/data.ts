@@ -4,7 +4,7 @@ import { demoId, demoSeed } from "@/data/demo";
 import type { AgendaItem, ShopBundle } from "@/data/types";
 import type { Lang } from "@/core/types";
 import { dayInZone } from "@/core/time";
-import { fetchAll, listSubscriptions, type Result, type SubRow } from "@/modules/plans/data";
+import { fetchAll, listSubscriptions, type SubRow } from "@/modules/plans/data";
 import { demoGlobal } from "@/data/demo-global";
 
 export interface ClientRow {
@@ -158,29 +158,53 @@ export async function getClient(b: ShopBundle, id: string): Promise<ClientDetail
 
 const PHONE_TAKEN = "Já existe um cliente com este WhatsApp.";
 
-export async function createClient(b: ShopBundle, input: { name: string; phone: string }): Promise<Result> {
+/** Cliente da barbearia que já usa este WhatsApp (o celular é a identidade do cliente). */
+export type SameClient = { id: string; name: string; phone: string };
+/** Resultado de cadastrar/editar: quando o número já é de outro cliente, diz quem é. */
+export type ClientResult = { ok: true; id?: string } | { ok: false; error: string; existing?: SameClient };
+
+export async function findClientByPhone(b: ShopBundle, phone: string, exceptId?: string): Promise<SameClient | null> {
+  if (!supabaseConfigured()) {
+    const c = demoSeed().clients.find((x) => x.phone === phone && x.id !== exceptId);
+    return c ? { id: c.id, name: c.name, phone: c.phone } : null;
+  }
+  const db = await supabaseServer();
+  const { data } = await db.from("clients").select("id, name, phone_e164").eq("shop_id", b.shop.id).eq("phone_e164", phone).maybeSingle();
+  return data && data.id !== exceptId ? { id: data.id, name: data.name, phone: data.phone_e164 } : null;
+}
+
+async function taken(b: ShopBundle, phone: string, exceptId?: string): Promise<ClientResult> {
+  const existing = await findClientByPhone(b, phone, exceptId);
+  return existing
+    ? { ok: false, error: `Este WhatsApp já é do cliente ${existing.name}.`, existing }
+    : { ok: false, error: PHONE_TAKEN };
+}
+
+export async function createClient(b: ShopBundle, input: { name: string; phone: string }): Promise<ClientResult> {
   if (!supabaseConfigured()) {
     const s = demoSeed();
-    if (s.clients.some((c) => c.phone === input.phone)) return { ok: false, error: PHONE_TAKEN };
+    if (s.clients.some((c) => c.phone === input.phone)) return taken(b, input.phone);
     const id = demoId("c");
     s.clients.push({ id, name: input.name, phone: input.phone, lang: b.shop.defaultLang, createdAt: new Date(),
       preferredBarberId: null, notes: "", photoConsentAt: null, noShows: 0 });
     return { ok: true, id };
   }
+  // confere antes para dizer quem é; o banco (único por barbearia + celular) garante mesmo com dois cadastros ao mesmo tempo
+  if (await findClientByPhone(b, input.phone)) return taken(b, input.phone);
   const db = await supabaseServer();
   const { data, error } = await db.from("clients")
     .insert({ shop_id: b.shop.id, name: input.name, phone_e164: input.phone, lang: b.shop.defaultLang }).select("id").single();
-  if (error) return { ok: false, error: error.code === "23505" ? PHONE_TAKEN : error.message };
+  if (error) return error.code === "23505" ? taken(b, input.phone) : { ok: false, error: error.message };
   return { ok: true, id: data.id };
 }
 
-export async function updateClient(b: ShopBundle, id: string, p: ClientPatch): Promise<Result> {
+export async function updateClient(b: ShopBundle, id: string, p: ClientPatch): Promise<ClientResult> {
   if (p.preferredBarberId && !b.barbers.some((x) => x.id === p.preferredBarberId)) return { ok: false, error: "Barbeiro não encontrado." };
   if (!supabaseConfigured()) {
     const s = demoSeed();
     const c = s.clients.find((x) => x.id === id);
     if (!c) return { ok: false, error: "Cliente não encontrado." };
-    if (s.clients.some((x) => x.id !== id && x.phone === p.phone)) return { ok: false, error: PHONE_TAKEN };
+    if (s.clients.some((x) => x.id !== id && x.phone === p.phone)) return taken(b, p.phone, id);
     const renamed = c.name !== p.name;
     Object.assign(c, {
       name: p.name, phone: p.phone, preferredBarberId: p.preferredBarberId, notes: p.notes,
@@ -198,7 +222,7 @@ export async function updateClient(b: ShopBundle, id: string, p: ClientPatch): P
     preferences: p.preferences || null, notes: p.notes || null,
     photo_consent_at: p.photoConsent ? cur.photo_consent_at ?? new Date().toISOString() : null,
   }).eq("id", id).eq("shop_id", b.shop.id);
-  if (error) return { ok: false, error: error.code === "23505" ? PHONE_TAKEN : error.message };
+  if (error) return error.code === "23505" ? taken(b, p.phone, id) : { ok: false, error: error.message };
   return { ok: true };
 }
 

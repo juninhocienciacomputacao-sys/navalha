@@ -10,6 +10,9 @@ import { clientMatches, daysLeft, matchesQuery, waLink, type ClientFilter } from
 import type { ClientRow } from "@/modules/clients/data";
 import { Avatar, Badge, fmtPhone, planBadge, WhatsAppLink } from "@/modules/clients/ui";
 import { addClient } from "./actions";
+import { isFullName } from "@/core/phone";
+import type { SameClient } from "@/modules/clients/data";
+import { SamePhoneNotice, usePhoneOwner } from "./SamePhone";
 
 const FILTERS: [ClientFilter, string][] = [
   ["all", "Todos"], ["subscribers", "Assinantes"], ["away", "Sumidos"], ["new", "Novos"], ["noshow", "Com faltas"],
@@ -116,14 +119,23 @@ function NewClient({ slug, onDone }: { slug: string; onDone: () => void }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
+  const [dup, setDup] = useState<SameClient | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
+  const live = usePhoneOwner(slug, phone);
+  const owner = live ?? dup;
+  const nameBad = name.trim().length > 0 && !isFullName(name);
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setError(""); setDup(null);
+    if (!isFullName(name)) return setError("Escreva o nome completo do cliente (nome e sobrenome).");
+    if (owner) return;
     start(async () => {
       const r = await addClient(slug, { name, phone });
-      if (!r.ok) return setError(r.error);
+      if (!r.ok) {
+        if (r.existing) return setDup(r.existing);
+        return setError(r.error);
+      }
       onDone();
       if (r.id) router.push(`/painel/${slug}/clientes/${r.id}`);
     });
@@ -131,16 +143,19 @@ function NewClient({ slug, onDone }: { slug: string; onDone: () => void }) {
   return (
     <form onSubmit={submit} className="mt-4 grid gap-3 rounded-xl bg-neutral-50 p-3 md:grid-cols-[1fr_1fr_auto] md:items-end dark:bg-neutral-950">
       <label className="text-sm">
-        <span className="mb-1 block text-xs font-medium text-neutral-500">Nome</span>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: João Silva" autoFocus required />
+        <span className="mb-1 block text-xs font-medium text-neutral-500">WhatsApp (identifica o cliente)</span>
+        <input className="input" value={phone} onChange={(e) => { setPhone(e.target.value); setDup(null); }} placeholder="(11) 98888-7777" inputMode="tel" autoFocus required />
       </label>
       <label className="text-sm">
-        <span className="mb-1 block text-xs font-medium text-neutral-500">WhatsApp</span>
-        <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 98888-7777" inputMode="tel" required />
+        <span className="mb-1 block text-xs font-medium text-neutral-500">Nome completo</span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: João da Silva" autoComplete="off" required
+          aria-invalid={nameBad || undefined} />
       </label>
-      <button className="btn" disabled={pending}>{pending ? "Salvando…" : "Cadastrar"}</button>
+      <button className="btn" disabled={pending || Boolean(owner)}>{pending ? "Salvando…" : "Cadastrar"}</button>
+      {owner && <SamePhoneNotice slug={slug} owner={owner} className="md:col-span-3" />}
+      {nameBad && !error && <p className="text-xs text-neutral-500 md:col-span-3">Coloque nome e sobrenome, como no documento.</p>}
       {error && <p className="text-sm text-red-600 md:col-span-3 dark:text-red-400">{error}</p>}
-      <p className="text-xs text-neutral-500 md:col-span-3">Sem o código do país, consideramos Brasil (+55). Para outro país, comece com + (ex.: +351 912 345 678).</p>
+      <p className="text-xs text-neutral-500 md:col-span-3">Cada cliente tem um WhatsApp só: o mesmo número não pode ser de dois clientes. Sem o código do país, consideramos Brasil (+55). Para outro país, comece com + (ex.: +351 912 345 678).</p>
     </form>
   );
 }

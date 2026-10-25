@@ -7,8 +7,9 @@ import { z } from "zod";
 import { repo } from "@/data";
 import { daySlots } from "@/data/booking";
 import { addDays } from "@/core/time";
+import { isFullName } from "@/core/phone";
 import {
-  bookAsViewer, cancelAsViewer, createStyleProject, paymentStatus, resolveViewer, setPhotoConsent, startPlanPayment,
+  bookAsViewer, cancelAsViewer, clientIdByPhone, createStyleProject, paymentStatus, resolveViewer, setPhotoConsent, startPlanPayment,
 } from "@/modules/client-app/data";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -58,6 +59,11 @@ export async function confirmBooking(input: z.infer<typeof bookSchema>) {
   const p = bookSchema.parse(input);
   const c = await ctx(p.slug, p.as);
   if (!c) return { ok: false as const, error: "not_found" };
+  // O WhatsApp confirmado é a identidade: se já existe cadastro com ele nesta barbearia, o horário vai para esse cliente.
+  // Se ainda não existe, o cadastro nasce agora e precisa do nome completo.
+  if (c.viewer.kind === "user" && !isFullName(p.name) && !(await clientIdByPhone(c.b.shop.id, c.viewer.phone))) {
+    return { ok: false as const, error: "full_name" };
+  }
   const r = await bookAsViewer(c.b, c.viewer, p);
   if (r.ok) done(p.slug);
   return r;

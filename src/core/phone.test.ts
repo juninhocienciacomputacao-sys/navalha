@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { slugify, toE164 } from "./phone";
+import { cleanName, isFullName, slugify, toE164 } from "./phone";
 
 describe("telefone e endereço", () => {
   it("normaliza números", () => {
@@ -11,5 +11,14 @@ describe("telefone e endereço", () => {
   it("cria endereço sem acento", () => {
     expect(slugify("Barbearia do Zé!")).toBe("barbearia-do-ze");
     expect(slugify("  Corte & Cia  ")).toBe("corte-cia");
+  });
+  it("exige nome completo", () => {
+    expect(isFullName("João Silva")).toBe(true);
+    expect(isFullName("  Zé   da Silva ")).toBe(true);
+    expect(isFullName("Ana Maria O'Neil")).toBe(true);
+    expect(isFullName("João")).toBe(false);
+    expect(isFullName("J S")).toBe(false);
+    expect(isFullName("João 123")).toBe(false);
+    expect(cleanName("  joão   silva ")).toBe("joão silva");
   });
 });
