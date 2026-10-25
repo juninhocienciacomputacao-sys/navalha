@@ -23,3 +23,34 @@ body { @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dar
 @media (prefers-reduced-motion: reduce) {
   .member-sheen { animation: none; }
 }
+
+/* ---------- Agenda do painel ---------- */
+:root { --surface: #ffffff; --grid-h: rgba(115, 115, 115, 0.16); --grid-hh: rgba(115, 115, 115, 0.07); }
+@media (prefers-color-scheme: dark) {
+  :root { --surface: #171717; --grid-h: rgba(163, 163, 163, 0.14); --grid-hh: rgba(163, 163, 163, 0.06); }
+}
+.agenda-col {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--grid-h) 0 1px, transparent 1px 96px),
+    repeating-linear-gradient(to bottom, transparent 0 48px, var(--grid-hh) 48px 49px, transparent 49px 96px);
+}
+.agenda-col-off { background-color: rgba(115, 115, 115, 0.05); }
+.agenda-past {
+  background: repeating-linear-gradient(135deg, rgba(115, 115, 115, 0.06) 0 6px, transparent 6px 12px);
+}
+.agenda-appt {
+  background: color-mix(in srgb, var(--c) 14%, var(--surface));
+  border-left: 3px solid var(--c);
+  color: color-mix(in srgb, var(--c) 45%, #0a0a0a);
+}
+@media (prefers-color-scheme: dark) {
+  .agenda-appt { background: color-mix(in srgb, var(--c) 24%, var(--surface)); color: color-mix(in srgb, var(--c) 30%, #fafafa); }
+}
+.agenda-appt:hover { background: color-mix(in srgb, var(--c) 22%, var(--surface)); }
+.agenda-pending { outline: 1px dashed color-mix(in srgb, var(--c) 70%, transparent); outline-offset: -1px; }
+.agenda-reserve {
+  background: repeating-linear-gradient(135deg, rgba(245, 158, 11, 0.10) 0 8px, rgba(245, 158, 11, 0.03) 8px 16px);
+}
+.agenda-pop { animation: agenda-pop 0.18s ease-out; }
+@keyframes agenda-pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .agenda-pop { animation: none; } }

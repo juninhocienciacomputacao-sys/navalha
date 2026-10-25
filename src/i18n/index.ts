@@ -2,6 +2,12 @@ import type { I18nText, Lang } from "@/core/types";
 
 const dict = {
   pt: {
+    // agendamento em etapas
+    step_service: "O que vamos fazer hoje?", step_when: "Quando fica bom?", step_confirm: "Confira e confirme",
+    part_morning: "Manhã", part_afternoon: "Tarde", part_night: "Noite", change: "Trocar",
+    next_free: "Próximo horário livre", next_free_sub: "{d} às {t}", see_it: "Ver", searching_next: "Procurando o próximo horário livre…",
+    none_soon: "Sem horários livres nos próximos dias. Fale com a barbearia.", who: "Com quem?", duration: "Duração", value: "Valor",
+    add_cal: "Adicionar ao calendário", fastest: "Mais rápido", any_hint: "Primeiro barbeiro livre", step_n: "Etapa {a} de {b}",
     plan_dot: "Em verde: sai pelo seu plano",
     // limite de horários e regras do plano
     booking_limit_overlap: "Você já tem um horário nesse mesmo momento.",
@@ -67,6 +73,11 @@ const dict = {
     shop_featured: "Indicado pela barbearia", photo_error: "Não deu para abrir essa foto. Tente outra (JPG ou PNG).", no_photo_consent: "Autorize o uso da foto para continuar.",
   },
   en: {
+    step_service: "What are we doing today?", step_when: "When works for you?", step_confirm: "Review and confirm",
+    part_morning: "Morning", part_afternoon: "Afternoon", part_night: "Evening", change: "Change",
+    next_free: "Next free time", next_free_sub: "{d} at {t}", see_it: "See", searching_next: "Looking for the next free time…",
+    none_soon: "No free times in the next days. Please contact the shop.", who: "With whom?", duration: "Duration", value: "Price",
+    add_cal: "Add to calendar", fastest: "Fastest", any_hint: "First free barber", step_n: "Step {a} of {b}",
     plan_dot: "Green: covered by your plan",
     booking_limit_overlap: "You already have a booking at that time.",
     booking_limit_same_day: "You already have a booking on this day. One per day here.",
@@ -130,6 +141,11 @@ const dict = {
     shop_featured: "Recommended by the shop", photo_error: "Couldn't open that photo. Try another one (JPG or PNG).", no_photo_consent: "Allow the use of your photo to continue.",
   },
   es: {
+    step_service: "¿Qué hacemos hoy?", step_when: "¿Cuándo te queda bien?", step_confirm: "Revisa y confirma",
+    part_morning: "Mañana", part_afternoon: "Tarde", part_night: "Noche", change: "Cambiar",
+    next_free: "Próximo horario libre", next_free_sub: "{d} a las {t}", see_it: "Ver", searching_next: "Buscando el próximo horario libre…",
+    none_soon: "No hay horarios libres en los próximos días. Habla con la barbería.", who: "¿Con quién?", duration: "Duración", value: "Valor",
+    add_cal: "Añadir al calendario", fastest: "Más rápido", any_hint: "Primer barbero libre", step_n: "Paso {a} de {b}",
     plan_dot: "En verde: lo cubre tu plan",
     booking_limit_overlap: "Ya tienes un turno en ese mismo momento.",
     booking_limit_same_day: "Ya tienes un turno este día. Aquí es uno por día.",

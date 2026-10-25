@@ -136,6 +136,12 @@ const PATHS: Record<string, string> = {
   chevron: "M9 6l6 6-6 6",
   copy: "M8 8h12v12H8zM4 16V4h12",
   lock: "M6 11h12v9H6zM8 11V8a4 4 0 018 0v3",
+  bolt: "M13 2L4 14h7l-1 8 9-12h-7z",
+  sun: "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4M12 16a4 4 0 100-8 4 4 0 000 8z",
+  moon: "M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z",
+  sunset: "M12 4v3M5 11l1.5 1.5M19 11l-1.5 1.5M3 19h18M7 19a5 5 0 0110 0",
+  users: "M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1M9 10a3 3 0 100-6 3 3 0 000 6zM22 19v-1a4 4 0 00-3-3.9M16 4.1a3 3 0 010 5.8",
+  plus: "M12 5v14M5 12h14",
 };
 
 export function Icon({ name, className = "size-5" }: { name: keyof typeof PATHS | "instagram"; className?: string }) {

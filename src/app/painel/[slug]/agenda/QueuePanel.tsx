@@ -66,11 +66,21 @@ export default function QueuePanel({ slug, queue, barbers, services, freeReserve
     });
   }
 
+  if (queue.length === 0 && !adding && !msg) return (
+    <section className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-dashed border-neutral-300 px-4 py-2.5 text-sm dark:border-neutral-700">
+      <span className="flex items-center gap-2 text-neutral-500">
+        <span className="size-2 rounded-full bg-emerald-500" />
+        Ninguém esperando sem horário{open ? ` · ${freeReserves} horário(s) livre(s) para encaixe hoje` : ""}
+      </span>
+      <button className="chip py-1.5" onClick={openAdd}>+ Chegou cliente</button>
+    </section>
+  );
+
   return (
     <section className="card mb-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="font-semibold">Fila de quem chegou sem horário</h2>
+          <h2 className="flex items-center gap-2 font-semibold">Fila de quem chegou sem horário{queue.length > 0 && <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-neutral-950">{queue.length}</span>}</h2>
           <p className="text-xs text-neutral-500">
             {open ? `${freeReserves} horário(s) guardado(s) para encaixe ainda livre(s) hoje.` : "Fechado hoje."} &quot;Chamar&quot; coloca a pessoa no primeiro horário livre de qualquer barbeiro.
           </p>
@@ -131,7 +141,7 @@ export default function QueuePanel({ slug, queue, barbers, services, freeReserve
                     {f ? ` · previsão ${toHHMM(f.time)} com ${barber(f.barberId)?.name ?? ""}` : " · sem horário livre hoje"}
                   </span>
                 </span>
-                <span className="flex gap-2">
+                <span className="flex w-full gap-2 pl-10 sm:w-auto sm:pl-0">
                   <button className="btn px-3 py-1.5" disabled={pending || !f} onClick={() => call(q.id)}>Chamar</button>
                   <button className="chip px-3 py-1.5" disabled={pending} onClick={() => leave(q.id, q.name)}>Desistiu</button>
                 </span>

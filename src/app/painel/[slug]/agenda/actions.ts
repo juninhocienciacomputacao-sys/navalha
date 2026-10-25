@@ -9,7 +9,8 @@ import {
   addToQueue, closeQueueEntry, createAppointment, getAppointment, getQueueEntry, listAppointments,
   rescheduleAppointment, searchClients, setAppointmentStatus,
 } from "@/modules/agenda/data";
-import { dayRange, fitNow, freeTimes, notBeforeFor } from "@/modules/agenda/plan";
+import { dayHours, dayRange, fitNow, freeTimes, notBeforeFor } from "@/modules/agenda/plan";
+import type { ShopBundle } from "@/data/types";
 import { getClient, listClients, updateClient } from "@/modules/clients/data";
 
 const slugS = z.string().min(1).max(80);
@@ -18,6 +19,17 @@ const idS = z.string().min(1).max(64);
 const minutesS = z.number().int().min(0).max(24 * 60);
 
 const FORBIDDEN = { ok: false as const, error: "forbidden" };
+
+/** Confere se o horário cabe no expediente do dia e não ficou no passado. */
+function whenProblem(b: ShopBundle, day: string, minutes: number, durationMin: number): string | null {
+  const nb = notBeforeFor(b, day);
+  if (nb === null) return "slot_in_past";
+  const hours = dayHours(b, day);
+  if (!hours) return "closed";
+  if (minutes < hours.open || minutes + durationMin > hours.close) return "out_of_hours";
+  if (nb > 0 && minutes < nb - b.shop.slotStepMin) return "slot_in_past";
+  return null;
+}
 /** Pode mexer na agenda deste barbeiro? (agenda de todos, ou é a própria agenda) */
 const may = (s: Staff, barberId: string) => s.workable.includes(barberId);
 
@@ -82,8 +94,10 @@ export async function createAppt(input: z.infer<typeof createS>) {
   const s = await assertStaff(p.slug);
   const { bundle } = s;
   if (!may(s, p.barberId)) return FORBIDDEN;
-  const nb = notBeforeFor(bundle, p.day);
-  if (nb === null || (nb > 0 && p.minutes < nb - bundle.shop.slotStepMin)) return { ok: false as const, error: "slot_in_past" };
+  const svc = bundle.services.find((x) => x.id === p.serviceId);
+  if (!svc) return { ok: false as const, error: "not_found" };
+  const bad = whenProblem(bundle, p.day, p.minutes, svc.durationMin);
+  if (bad) return { ok: false as const, error: bad };
   const r = await createAppointment(bundle, {
     barberId: p.barberId, serviceId: p.serviceId, startsAt: atMinutes(p.day, p.minutes, bundle.shop.timezone),
     clientId: p.clientId, walkInName: p.clientId ? null : p.walkInName, source: "reception",
@@ -114,7 +128,8 @@ export async function reschedule(input: z.infer<typeof moveS>) {
   const appt = await getAppointment(bundle, p.id);
   if (!appt) return { ok: false as const, error: "not_found" };
   if (!may(s, appt.barberId) || !may(s, p.barberId)) return FORBIDDEN;
-  if (notBeforeFor(bundle, p.day) === null) return { ok: false as const, error: "slot_in_past" };
+  const bad = whenProblem(bundle, p.day, p.minutes, Math.round((+appt.endsAt - +appt.startsAt) / 60_000));
+  if (bad) return { ok: false as const, error: bad };
   const r = await rescheduleAppointment(bundle, p.id, p.barberId, atMinutes(p.day, p.minutes, bundle.shop.timezone));
   if (r.ok) touch(p.slug);
   return r;

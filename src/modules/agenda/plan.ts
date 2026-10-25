@@ -101,7 +101,7 @@ export function toDayItems(b: ShopBundle, appts: Appt[]): DayItem[] {
   const tz = b.shop.timezone;
   return appts.map((a) => ({
     id: a.id, barberId: a.barberId, clientName: a.clientName, phone: a.phone, serviceId: a.serviceId, serviceName: a.serviceName,
-    start: minutesInZone(a.startsAt, tz), end: minutesInZone(a.endsAt, tz), status: a.status, viaPlan: a.viaPlan, walkIn: a.source === "walk_in",
+    start: minutesInZone(a.startsAt, tz), end: minutesInZone(a.endsAt, tz), status: a.status, viaPlan: a.viaPlan, walkIn: a.source === "walk_in", price: a.price,
   }));
 }
 

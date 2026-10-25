@@ -9,12 +9,12 @@ import { changeStatus, noteOnClient, reschedule } from "./actions";
 import { DayPicker, TimePicker } from "./NewAppt";
 import Sheet, { Label } from "./Sheet";
 
-const ACTIONS: { status: Exclude<ViewStatus, "pending">; label: string; cls: string }[] = [
-  { status: "in_service", label: "Começar atendimento", cls: "bg-sky-600 text-white hover:bg-sky-500" },
-  { status: "done", label: "Concluído", cls: "bg-emerald-600 text-white hover:bg-emerald-500" },
-  { status: "no_show", label: "Faltou", cls: "bg-amber-500 text-neutral-950 hover:bg-amber-400" },
-  { status: "cancelled", label: "Cancelar", cls: "bg-red-600 text-white hover:bg-red-500" },
-  { status: "confirmed", label: "Voltar para confirmado", cls: "border border-neutral-300 dark:border-neutral-700" },
+const ACTIONS: { status: Exclude<ViewStatus, "pending">; label: string; cls: string; soft: string }[] = [
+  { status: "in_service", label: "Começar atendimento", cls: "bg-sky-600 text-white hover:bg-sky-500", soft: "text-sky-700 dark:text-sky-300" },
+  { status: "done", label: "Concluído", cls: "bg-emerald-600 text-white hover:bg-emerald-500", soft: "text-emerald-700 dark:text-emerald-300" },
+  { status: "no_show", label: "Faltou", cls: "bg-amber-500 text-neutral-950 hover:bg-amber-400", soft: "text-amber-700 dark:text-amber-300" },
+  { status: "cancelled", label: "Cancelar", cls: "bg-red-600 text-white hover:bg-red-500", soft: "text-red-600 dark:text-red-400" },
+  { status: "confirmed", label: "Voltar para confirmado", cls: "border border-neutral-300 dark:border-neutral-700", soft: "" },
 ];
 
 export default function ApptSheet({ slug, today, day, item, barbers, onClose }: {
@@ -62,24 +62,40 @@ export default function ApptSheet({ slug, today, day, item, barbers, onClose }: 
   }
 
   const wa = item.phone.replace(/\D/g, "");
+  // a próxima ação natural vira o botão grande; as outras ficam abaixo
+  const main = item.status === "in_service" ? "done" : item.status === "pending" || item.status === "confirmed" ? "in_service" : null;
+  const primary = ACTIONS.find((a) => a.status === main);
   return (
     <Sheet title={item.clientName} onClose={onClose}>
-      <div className="space-y-1 text-sm">
-        <p><b>{item.serviceName}</b> · {toHHMM(item.start)}–{toHHMM(item.end)}</p>
-        <p className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: barber?.color }} />com {barber?.name}</p>
-        <p className="flex flex-wrap gap-1.5 pt-1">
-          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium dark:bg-neutral-800">{STATUS_TEXT[item.status]}</span>
-          {item.viaPlan && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">plano</span>}
-          {item.walkIn && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-950 dark:text-violet-300">encaixe</span>}
-        </p>
-        {wa && <a className="inline-block pt-1 text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-400" target="_blank" rel="noreferrer" href={`https://wa.me/${wa}`}>WhatsApp {item.phone}</a>}
+      <div className="agenda-appt -mt-1 rounded-2xl p-4" style={{ "--c": barber?.color ?? "#737373" } as React.CSSProperties}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-2xl font-bold tabular-nums tracking-tight">{toHHMM(item.start)}<span className="text-base font-medium opacity-60"> – {toHHMM(item.end)}</span></p>
+            <p className="mt-0.5 font-semibold">{item.serviceName}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-sm opacity-80"><span className="h-2.5 w-2.5 rounded-full" style={{ background: barber?.color }} />com {barber?.name}</p>
+          </div>
+          <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold dark:bg-black/30">{STATUS_TEXT[item.status]}</span>
+        </div>
+        {(item.viaPlan || item.walkIn || wa) && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {item.viaPlan && <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-black/30 dark:text-amber-300">plano</span>}
+            {item.walkIn && <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:bg-black/30 dark:text-violet-300">encaixe</span>}
+            {wa && <a className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-500" target="_blank" rel="noreferrer" href={`https://wa.me/${wa}`}>WhatsApp</a>}
+          </div>
+        )}
       </div>
 
-      <Label>Mudar situação</Label>
+      {primary && (
+        <button disabled={pending} onClick={() => setStatus(primary.status)}
+          className={`mt-4 w-full rounded-2xl px-4 py-3.5 text-[15px] font-semibold shadow-sm transition disabled:opacity-40 ${primary.cls}`}>
+          {primary.status === "in_service" ? "▶ Começar atendimento" : "✓ Concluir atendimento"}
+        </button>
+      )}
+      <Label>{primary ? "Outras ações" : "Mudar situação"}</Label>
       <div className="grid grid-cols-2 gap-2">
-        {ACTIONS.filter((a) => a.status !== item.status).map((a) => (
+        {ACTIONS.filter((a) => a.status !== item.status && a.status !== primary?.status).map((a) => (
           <button key={a.status} disabled={pending} onClick={() => setStatus(a.status)}
-            className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-40 ${a.cls}`}>{a.label}</button>
+            className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-40 ${primary ? `border border-neutral-200 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800 ${a.soft}` : a.cls}`}>{a.status === "confirmed" && item.status === "pending" ? "Confirmar presença" : a.label}</button>
         ))}
       </div>
 

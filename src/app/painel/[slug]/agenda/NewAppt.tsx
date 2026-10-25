@@ -68,15 +68,30 @@ export function TimePicker({ slug, day, serviceId, barberId, exceptId, value, on
 
   if (!times || loading) return <p className="text-sm text-neutral-500">Carregando horários…</p>;
   if (!times.length) return <p className="text-sm text-neutral-500">Sem horário livre nesse dia com esse barbeiro.</p>;
+  const parts = [
+    { k: "Manhã", list: times.filter((t) => t.time < 12 * 60) },
+    { k: "Tarde", list: times.filter((t) => t.time >= 12 * 60 && t.time < 18 * 60) },
+    { k: "Noite", list: times.filter((t) => t.time >= 18 * 60) },
+  ].filter((p) => p.list.length);
   return (
-    <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
-      {times.map((t) => (
-        <button key={t.time} type="button" onClick={() => onChange(t.time)}
-          className={`chip px-2.5 py-1.5 tabular-nums ${value === t.time ? "chip-on" : ""} ${t.reserved ? "border-dashed" : ""}`}
-          title={t.reserved ? "Horário guardado para encaixe" : undefined}>
-          {toHHMM(t.time)}{t.reserved && <span className="ml-1 text-[10px] text-amber-700 dark:text-amber-400">encaixe</span>}
-        </button>
+    <div className="max-h-64 space-y-2.5 overflow-y-auto pr-1">
+      {parts.map((p) => (
+        <div key={p.k}>
+          <p className="mb-1 text-[11px] font-medium text-neutral-500">{p.k} · {p.list.length}</p>
+          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+            {p.list.map((t) => (
+              <button key={t.time} type="button" onClick={() => onChange(t.time)}
+                className={`rounded-lg border px-1 py-1.5 text-sm font-medium tabular-nums transition ${value === t.time
+                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-neutral-950"
+                  : t.reserved ? "border-dashed border-amber-400 bg-amber-50/60 hover:border-amber-500 dark:bg-amber-950/20" : "border-neutral-200 bg-white hover:border-amber-400 dark:border-neutral-700 dark:bg-neutral-900"}`}
+                title={t.reserved ? "Horário guardado para encaixe" : undefined}>
+                {toHHMM(t.time)}
+              </button>
+            ))}
+          </div>
+        </div>
       ))}
+      {times.some((t) => t.reserved) && <p className="text-[11px] text-neutral-500">Tracejado: horário guardado para encaixe.</p>}
     </div>
   );
 }
