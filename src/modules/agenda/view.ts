@@ -15,6 +15,8 @@ export interface DayItem {
   status: ViewStatus;
   viaPlan: boolean;
   walkIn: boolean;
+  /** Valor do atendimento (para o previsto do dia). */
+  price?: number;
   /** Horário de um colega que a pessoa não pode ver (só aparece como "Ocupado", sem nome). */
   masked?: boolean;
 }
@@ -65,5 +67,7 @@ export const ERROR_TEXT: Record<string, string> = {
   no_slot: "Não há horário livre hoje para esse serviço.",
   not_found: "Não encontrado. Atualize a página.",
   forbidden: "Sua conta não pode fazer isso.",
+  out_of_hours: "Fora do horário de funcionamento da barbearia.",
+  closed: "A barbearia está fechada nesse dia.",
 };
 export const errorText = (e: string) => ERROR_TEXT[e] ?? "Não deu certo. Tente de novo.";

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { repo } from "@/data";
 import { daySlots } from "@/data/booking";
+import { addDays } from "@/core/time";
 import {
   bookAsViewer, cancelAsViewer, createStyleProject, paymentStatus, resolveViewer, setPhotoConsent, startPlanPayment,
 } from "@/modules/client-app/data";
@@ -27,6 +28,23 @@ export async function loadSlots(s: string, d: string, serviceId: string, barberI
   const c = await ctx(s);
   if (!c) return null;
   return daySlots(c.r, c.b, day.parse(d), z.string().parse(serviceId), barberId ? z.string().parse(barberId) : undefined);
+}
+
+/** Primeiro horário livre a partir de um dia (até 30 dias), para "Próximo horário livre". */
+export async function nextFree(s: string, from: string, serviceId: string, barberId?: string) {
+  const c = await ctx(s);
+  if (!c) return null;
+  const sid = z.string().max(64).parse(serviceId);
+  const bid = barberId ? z.string().max(64).parse(barberId) : undefined;
+  for (let i = 0; i < 30; i++) {
+    const d = addDays(day.parse(from), i);
+    const r = await daySlots(c.r, c.b, d, sid, bid);
+    if (r.closed) continue;
+    if (bid && r.preferred) {
+      if (r.preferred.own.length) return { day: d, minutes: r.preferred.own[0], barberId: bid };
+    } else if (r.options.length) return { day: d, minutes: r.options[0].time, barberId: r.options[0].barberIds[0] };
+  }
+  return null;
 }
 
 const bookSchema = z.object({
