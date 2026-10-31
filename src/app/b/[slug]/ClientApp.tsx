@@ -16,6 +16,9 @@ import Booking, { type BookPreset } from "./Booking";
 import PlanTab, { PayScreen } from "./PlanTab";
 import StyleFlow, { ProjectScreen } from "./StyleFlow";
 import ShopTab from "./ShopTab";
+import PrivacyBox from "./PrivacyBox";
+import InstallApp from "@/components/InstallApp";
+import { LegalLinks } from "@/legal/LegalPage";
 import { Avatar, Bar, BigButton, Icon, Label, LoginCard, PlanCard, Row, dayLabel, initials, shortDate, when } from "./ui";
 
 export type Tab = "home" | "book" | "shop" | "plan";
@@ -115,6 +118,10 @@ export default function ClientApp(p: AppProps) {
         )}
 
         {body}
+
+        {!screen && tab === "home" && <InstallApp lang={lang} name={bundle.shop.name} className="mt-6" />}
+        {!screen && tab === "home" && home && <PrivacyBox slug={bundle.shop.slug} lang={lang} demoAs={demoAs} />}
+        {!screen && tab === "home" && <LegalLinks lang={lang} back={`/b/${bundle.shop.slug}?lang=${lang}`} className="mt-6" />}
       </main>
 
       {toast && (

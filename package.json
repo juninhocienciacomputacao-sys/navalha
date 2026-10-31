@@ -8,8 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:check": "node scripts/db-check.mjs && node scripts/db-reset-check.mjs && node scripts/db-update-check.mjs",
-    "db:bundle": "node scripts/db-bundle.mjs && node scripts/db-repair.mjs"
+    "db:check": "node scripts/db-check.mjs && node scripts/db-security-check.mjs && node scripts/db-reset-check.mjs && node scripts/db-update-check.mjs",
+    "db:bundle": "node scripts/db-bundle.mjs && node scripts/db-repair.mjs",
+    "test:e2e": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -28,8 +29,12 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.7"
+  },
+  "overrides": {
+    "postcss": "^8.5.32"
   }
 }

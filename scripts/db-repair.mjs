@@ -13,6 +13,8 @@ const out = [
 out.push(...(src.match(/^alter table \w+ add column if not exists[\s\S]*?;/gm) ?? []));
 const fns = src.match(/^create or replace function[\s\S]*?\bas \$\$[\s\S]*?\$\$;/gm) ?? [];
 out.push(...fns);
+// políticas removidas de vez (ex.: a vitrine da equipe saiu da tabela em 0015): vêm antes dos pares abaixo
+out.push(...(src.match(/^drop policy if exists \w+ on \w+;$/gm) ?? []));
 // políticas no formato "drop policy if exists X on T;" seguido de "create policy X on T ...;" (mesmo nome e tabela)
 out.push(...(src.match(/^drop policy if exists [^\n]*;\ncreate policy [^\n]*;$/gm) ?? []).filter((x) => {
   const [, a, ta] = x.match(/^drop policy if exists (\w+) on (\w+)/) ?? [];

@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { assertStaff } from "@/lib/staff";
+import { assertOwner, assertStaff } from "@/lib/staff";
+import { forgetClient } from "@/modules/client-app/data";
 import { cleanName, isFullName, toE164 } from "@/core/phone";
 import { createClient, findClientByPhone, updateClient, type ClientResult } from "@/modules/clients/data";
 
@@ -55,4 +56,19 @@ export async function saveClient(slug: string, id: string, input: z.input<typeof
     revalidatePath(`/painel/${slug}/clientes/${id}`);
   }
   return r;
+}
+
+/**
+ * LGPD/GDPR: o cliente pediu para ser esquecido. Só o dono apaga.
+ * Ficha, plano, fotos e projetos somem; atendimentos e pagamentos passados ficam sem nome (contabilidade).
+ */
+export async function forgetClientAction(slug: string, id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { bundle } = await assertOwner(slug);
+    const r = await forgetClient(bundle.shop.id, z.string().min(1).max(64).parse(id));
+    if (r.ok) revalidatePath(`/painel/${slug}/clientes`);
+    return r.ok ? { ok: true } : { ok: false, error: "Não deu certo. Tente de novo." };
+  } catch {
+    return { ok: false, error: "Só o dono da barbearia pode apagar o cadastro de um cliente." };
+  }
 }

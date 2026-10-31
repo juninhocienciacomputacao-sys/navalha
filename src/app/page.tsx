@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { repo } from "@/data";
+import { LegalLinks } from "@/legal/LegalPage";
 
 export default function Home() {
   const demo = repo().mode === "demo";
@@ -15,6 +16,7 @@ export default function Home() {
         <Link href="/b/dom-bigode" className="card hover:border-amber-400"><b>App do cliente</b><span className="block text-sm text-neutral-500">Agendar um horário</span></Link>
         <Link href="/painel/dom-bigode" className="card hover:border-amber-400"><b>Painel do dono</b><span className="block text-sm text-neutral-500">Agenda, faturamento e planos</span></Link>
       </div>
+      <LegalLinks lang="pt" />
     </main>
   );
 }

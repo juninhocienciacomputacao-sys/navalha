@@ -9,6 +9,7 @@ import { getClient } from "@/modules/clients/data";
 import { listPlans, subscriptionPayments } from "@/modules/plans/data";
 import { Avatar, Badge, fmtDay, fmtPhone, Kpi, planBadge, WhatsAppLink } from "@/modules/clients/ui";
 import ClientForm from "./ClientForm";
+import ForgetClient from "./ForgetClient";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ const METHOD = { pix: "Pix", card: "Cartão", cash: "Dinheiro" } as const;
 
 export default async function Ficha({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  const { bundle } = await requireSection(slug, "clientes");
+  const { bundle, realRole, preview } = await requireSection(slug, "clientes");
   const { shop, barbers } = bundle;
   const c = await getClient(bundle, decodeURIComponent(id));
   if (!c) notFound();
@@ -133,6 +134,7 @@ export default async function Ficha({ params }: { params: Promise<{ slug: string
           </ul>
         )}
       </section>
+      {realRole === "owner" && !preview && <ForgetClient slug={slug} id={c.id} name={c.name} />}
     </main>
   );
 }

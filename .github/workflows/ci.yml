@@ -1,0 +1,42 @@
+# Testes automáticos: rodam em todo envio de código e em todo pedido de junção (PR).
+# Se algo quebrar, o GitHub mostra um X vermelho e o PR não deve ser juntado.
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Dependências sem falha de segurança conhecida (o que vai para o ar)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Revisão do código (lint e tipos)
+        run: npm run lint && npx tsc --noEmit
+      - name: Regras de negócio
+        run: npm test
+      - name: Banco de dados e segurança do banco
+        run: npm run db:check
+      - name: Arquivos SQL gerados estão atualizados
+        run: npm run db:bundle && git diff --exit-code supabase/
+      - name: Build
+        run: npm run build
+      - name: Navegador para o teste das telas
+        run: npx playwright install --with-deps chromium
+      - name: Todas as telas no celular e no computador
+        run: |
+          npx next start -p 3000 &
+          for i in $(seq 1 60); do curl -sf http://localhost:3000 > /dev/null && break; sleep 1; done
+          npm run test:e2e

@@ -15,7 +15,13 @@ const TABS: Tab[] = ["home", "book", "shop", "plan"];
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const b = await repo().shopBySlug((await params).slug);
-  return { title: b ? b.shop.name : "Navalha" };
+  if (!b) return { title: "Navalha" };
+  return {
+    title: b.shop.name,
+    description: `Agende seu horário na ${b.shop.name}`,
+    manifest: `/b/${b.shop.slug}/manifest.webmanifest`,
+    appleWebApp: { capable: true, title: b.shop.name, statusBarStyle: "black-translucent" },
+  };
 }
 
 export default async function Page({ params, searchParams }: {
