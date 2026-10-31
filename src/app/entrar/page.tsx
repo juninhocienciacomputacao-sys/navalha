@@ -13,6 +13,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
           O app está em modo demonstração e não precisa de login. <Link className="underline" href={next}>Continuar</Link>
         </p>
       )}
+      <p className="mt-6 text-xs text-neutral-500">
+        Ao entrar, você concorda com os <Link className="underline" href="/termos">Termos de uso</Link> e a{" "}
+        <Link className="underline" href="/privacidade">Política de privacidade</Link>. Usamos seu WhatsApp só para o login, seus agendamentos e os avisos da barbearia.
+      </p>
     </main>
   );
 }

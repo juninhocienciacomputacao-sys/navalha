@@ -17,7 +17,8 @@ export const supabaseRepo: Repo = {
     const { data: shop } = await db.from("shops").select("*").eq("slug", slug).maybeSingle();
     if (!shop) return null;
     const [barbers, services, plans, walkIn] = await Promise.all([
-      db.from("barbers").select("id, display_name, role_title, color, photo").eq("shop_id", shop.id).eq("active", true).order("sort"),
+      // vitrine da equipe: só nome, cargo, cor e foto (comissão e metas ficam só para a equipe, 0015_privacy.sql)
+      db.rpc("public_team", { p_shop: shop.id }),
       // planos de cada serviço vêm junto (antes lia a tabela plan_services de todas as barbearias)
       db.from("services").select("id, name, duration_min, price, plan_services(plan_id)").eq("shop_id", shop.id).eq("active", true).order("sort"),
       db.from("plans").select(`id, name, price, quota_uses, period_days, ${PLAN_RULE_COLUMNS}`).eq("shop_id", shop.id).eq("active", true),
@@ -29,7 +30,7 @@ export const supabaseRepo: Repo = {
         defaultLang: shop.default_lang as Lang, timezone: shop.timezone, openingHours: shop.opening_hours,
         slotStepMin: shop.slot_step_min, planAlertDays: shop.plan_alert_days, modules: resolveModules(shop.modules),
       },
-      barbers: (barbers.data ?? []).map((b) => ({ id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, photo: b.photo ?? null })),
+      barbers: ((barbers.data ?? []) as { id: string; display_name: string; role_title: string | null; color: string | null; photo: string | null }[]).map((b) => ({ id: b.id, name: b.display_name, roleTitle: b.role_title, color: b.color, photo: b.photo ?? null })),
       services: ((services.data ?? []) as unknown as { id: string; name: I18nText; duration_min: number; price: number; plan_services: { plan_id: string }[] | null }[])
         .map((s) => ({
           id: s.id, name: s.name, durationMin: s.duration_min, price: Number(s.price),

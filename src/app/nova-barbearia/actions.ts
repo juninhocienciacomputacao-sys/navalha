@@ -12,9 +12,11 @@ const MESSAGES: Record<string, string> = {
   invalid_name: "Digite o nome da barbearia.",
   too_many_shops: "Limite de 5 barbearias por conta.",
   not_logged_in: "Entre com seu WhatsApp primeiro.",
+  terms: "Para continuar, aceite os Termos de uso e a Política de privacidade.",
 };
 
 export async function createShop(_: string, form: FormData): Promise<string> {
+  if (form.get("terms") !== "yes") return MESSAGES.terms;
   const name = String(form.get("name") ?? "");
   const slug = slugify(String(form.get("slug") || name));
   const pick = (k: string, ok: (v: string) => boolean, def: string) => { const v = String(form.get(k) ?? ""); return ok(v) ? v : def; };
@@ -29,7 +31,7 @@ export async function createShop(_: string, form: FormData): Promise<string> {
     if (known) return known;
     console.error("create_shop", error);
     // Mostra o código do erro para facilitar o suporte (sem dados do banco).
-    return `Não deu certo. Tente de novo. (erro ${error.code || "?"}: ${error.message.slice(0, 120)})`;
+    return `Não deu certo. Tente de novo. (erro ${error.code || "?"})`;
   }
   // pacote escolhido no cadastro (o dono acabou de virar dono, então pode gravar)
   if (shopId && pkg.key !== "completo") {

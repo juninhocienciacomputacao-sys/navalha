@@ -75,6 +75,14 @@ export default function NewShopForm() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+      <label className="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+        <input type="checkbox" name="terms" value="yes" required className="mt-0.5 size-4 accent-amber-500" />
+        <span>
+          Li e aceito os <a href="/termos" target="_blank" className="underline">Termos de uso</a> e a{" "}
+          <a href="/privacidade" target="_blank" className="underline">Política de privacidade</a>. Entendo que a barbearia é a
+          responsável pelos dados dos próprios clientes e o Navalha cuida deles em nome dela (LGPD/GDPR).
+        </span>
+      </label>
       <button className="btn w-full" disabled={pending || !slug}>Criar</button>
     </form>
   );

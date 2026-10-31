@@ -80,6 +80,23 @@ Depois, no painel, entre como dono e abra **Acessos**:
 
 Enquanto o login pelo WhatsApp estiver no plano grátis, dá para testar com números de teste do Supabase: em **Authentication → Sign In / Providers → Phone → Test Phone Numbers and OTPs**, cadastre por exemplo `5562900000001=123456`. Esse número entra com o código `123456` sem mandar mensagem nenhuma. Use o mesmo número (com DDD) ao dar acesso em **Acessos**.
 
+## Parte 5: atualização de segurança e privacidade (outubro de 2026)
+
+1. No Supabase, abra **SQL Editor → New query**, cole todo o conteúdo de `supabase/atualizar-banco.sql` e clique em **Run**. Pode rodar de novo sem problema.
+2. Na Vercel, em **Settings → Environment Variables**, crie (são os dados que aparecem na Política de privacidade e nos Termos):
+   - `NEXT_PUBLIC_COMPANY_NAME`: nome da sua empresa (razão social);
+   - `NEXT_PUBLIC_COMPANY_ID`: CNPJ;
+   - `NEXT_PUBLIC_COMPANY_ADDRESS`: endereço da empresa;
+   - `NEXT_PUBLIC_PRIVACY_EMAIL`: e-mail para pedidos de privacidade (encarregado/DPO).
+3. Em **Deployments**, clique nos três pontinhos do último e em **Redeploy**.
+4. Confira em `/privacidade` e `/termos` que não sobrou nenhum **[preencher]**.
+
+No Supabase, vale também:
+
+- **Authentication → Rate Limits**: deixe o limite de SMS/WhatsApp por hora baixo (ex.: 30) para ninguém gastar seus créditos mandando códigos.
+- **Authentication → Sign In / Providers → Phone**: código com validade de 5 a 10 minutos.
+- **Project Settings → Add-ons**: o plano Pro faz cópia de segurança diária automática. Antes de ter clientes pagando, ative.
+
 ## O que nunca compartilhar
 
 - A senha do banco.

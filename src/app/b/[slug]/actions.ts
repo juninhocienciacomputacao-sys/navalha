@@ -9,7 +9,7 @@ import { daySlots } from "@/data/booking";
 import { addDays } from "@/core/time";
 import { isFullName } from "@/core/phone";
 import {
-  bookAsViewer, cancelAsViewer, clientIdByPhone, createStyleProject, paymentStatus, resolveViewer, setPhotoConsent, startPlanPayment,
+  bookAsViewer, cancelAsViewer, clientIdByPhone, createStyleProject, deleteMyData, exportMyData, paymentStatus, resolveViewer, setPhotoConsent, startPlanPayment,
 } from "@/modules/client-app/data";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -126,6 +126,24 @@ export async function createProject(input: z.infer<typeof projectSchema>) {
     photoDataUrl: c.viewer.kind === "demo" ? p.photoDataUrl : null,
     photoPath: c.viewer.kind === "demo" ? null : p.photoPath,
   });
+  if (r.ok) done(p.slug);
+  return r;
+}
+
+/** Meus dados (LGPD/GDPR): devolve tudo o que a barbearia guarda sobre o cliente, para baixar. */
+export async function downloadMyData(input: { slug: string; as?: string }) {
+  const p = z.object({ slug, as }).parse(input);
+  const c = await ctx(p.slug, p.as);
+  if (!c) return null;
+  return exportMyData(c.b, c.viewer);
+}
+
+/** Meus dados (LGPD/GDPR): apaga o cadastro do cliente nesta barbearia. */
+export async function deleteMyAccount(input: { slug: string; as?: string }) {
+  const p = z.object({ slug, as }).parse(input);
+  const c = await ctx(p.slug, p.as);
+  if (!c) return { ok: false };
+  const r = await deleteMyData(c.b, c.viewer);
   if (r.ok) done(p.slug);
   return r;
 }

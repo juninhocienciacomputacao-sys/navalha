@@ -388,3 +388,73 @@ function demoProjectsFor(clientId: string, today: string): StyleProject[] {
   }
   return demoProjects.filter((p) => p.clientId === clientId).map((p): StyleProject => ({ id: p.id, goal: p.goal, barberId: p.barberId, createdAt: p.createdAt, steps: p.steps, photoUrl: p.photoUrl, cutShape: p.cutShape }));
 }
+
+// ---------- meus dados (LGPD / GDPR): baixar e apagar ----------
+
+/** Tudo o que a barbearia guarda sobre o cliente logado, para ele baixar (direito de acesso e portabilidade). */
+export async function exportMyData(b: ShopBundle, viewer: Viewer): Promise<Record<string, unknown> | null> {
+  if (viewer.kind === "guest") return null;
+  if (viewer.kind === "demo") {
+    const s = demoSeed();
+    const c = s.clients.find((x) => x.id === viewer.clientId);
+    if (!c) return null;
+    return {
+      exported_at: new Date().toISOString(), demo: true,
+      shop: { name: b.shop.name, address: b.shop.address },
+      client: { name: c.name, phone_e164: c.phone, lang: c.lang, created_at: c.createdAt, notes: c.notes, photo_consent_at: c.photoConsentAt },
+      appointments: s.appointments.filter((a) => a.clientId === c.id)
+        .map((a) => ({ starts_at: a.startsAt, status: a.status, price: a.price, service: a.serviceName, barber: b.barbers.find((x) => x.id === a.barberId)?.name })),
+    };
+  }
+  const db = await supabaseServer();
+  const { data, error } = await db.rpc("export_my_data", { p_shop: b.shop.id });
+  if (error) throw error;
+  return (data as Record<string, unknown> | null) ?? null;
+}
+
+/**
+ * Apaga o cadastro do cliente logado nesta barbearia (direito de exclusão).
+ * Atendimentos e pagamentos ficam sem nome, para a contabilidade da barbearia. Fotos são apagadas.
+ */
+export async function deleteMyData(b: ShopBundle, viewer: Viewer): Promise<{ ok: boolean; demo?: boolean }> {
+  if (viewer.kind === "guest") return { ok: false };
+  // na demonstração os clientes de exemplo precisam continuar existindo: só simula
+  if (viewer.kind === "demo") return { ok: true, demo: true };
+  const db = await supabaseServer();
+  // as fotos saem antes: depois que o cadastro some, o armazenamento não reconhece mais o dono da pasta
+  const { data: projects } = await db.from("style_projects").select("photo_paths").eq("shop_id", b.shop.id);
+  await removePhotos(db, (projects ?? []).flatMap((p) => (p.photo_paths as string[] | null) ?? []));
+  const { error } = await db.rpc("delete_my_data", { p_shop: b.shop.id });
+  if (error) return { ok: false };
+  await db.auth.signOut();
+  return { ok: true };
+}
+
+/** O dono apaga o cadastro de um cliente que pediu. O banco confere que é o dono. */
+export async function forgetClient(shopId: string, clientId: string): Promise<{ ok: boolean; demo?: boolean }> {
+  if (repo().mode === "demo") {
+    const s = demoSeed();
+    const i = s.clients.findIndex((c) => c.id === clientId);
+    if (i < 0) return { ok: false };
+    // mesma regra do banco: horários futuros cancelados, histórico fica sem nome
+    const now = new Date();
+    s.appointments.filter((a) => a.clientId === clientId).forEach((a) => {
+      if (a.startsAt > now && (a.status === "pending" || a.status === "confirmed")) a.status = "cancelled";
+      a.clientId = null;
+      a.clientName = "Cliente removido";
+    });
+    s.clients.splice(i, 1);
+    return { ok: true, demo: true };
+  }
+  const db = await supabaseServer();
+  const { data, error } = await db.rpc("forget_client", { p_shop: shopId, p_client: clientId });
+  if (error) return { ok: false };
+  await removePhotos(db, data as string[] | null);
+  return { ok: true };
+}
+
+async function removePhotos(db: Awaited<ReturnType<typeof supabaseServer>>, paths: string[] | null) {
+  if (!paths?.length) return;
+  const { error } = await db.storage.from(PHOTO_BUCKET).remove(paths);
+  if (error) console.error("removePhotos", error.message);
+}

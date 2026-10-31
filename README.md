@@ -11,7 +11,11 @@ npm install
 npm run dev        # http://localhost:3000
 npm test           # regras de negócio (agenda, planos, comissões, mensagens, fusos)
 npm run db:check   # valida o banco num Postgres em memória e testa segurança e agenda
+npm run build && npm start   # e, em outro terminal:
+npm run test:e2e   # abre todas as telas num navegador (celular e computador) e procura erros
 ```
+
+Tudo isso roda sozinho no GitHub a cada envio (`.github/workflows/ci.yml`).
 
 Sem configurar nada, o app abre com a barbearia de demonstração **Dom Bigode**:
 
@@ -40,6 +44,24 @@ Para usar o banco de verdade, crie um projeto no [Supabase](https://supabase.com
 - O cliente não grava direto nas tabelas. Ele agenda pela função `book_appointment`, que confere serviço, profissional, horário e plano.
 - Níveis da equipe (dono, gerente, recepção, barbeiro) escolhidos pelo dono em Acessos. O banco também confere: o barbeiro só lê e mexe nos próprios atendimentos (dos colegas, só vê livre/ocupado) e cada tela só aceita alterações de quem tem ela liberada. Regras em `src/core/access.ts` e na migração `0012_team_access.sql`.
 - O banco recusa dois atendimentos do mesmo barbeiro no mesmo horário, mesmo que dois clientes confirmem ao mesmo tempo.
+- Teste automático de segurança do banco (`scripts/db-security-check.mjs`): toda tabela com RLS, toda função protegida, visitante sem login sem acesso a dados. Vale também para tabelas e funções novas.
+- A vitrine da equipe (app e TV) vem da função `public_team`: comissão, aluguel de cadeira e metas ficam só para a equipe.
+- Cabeçalhos de segurança em todas as páginas (CSP, HSTS, anti-clickjacking) em `next.config.ts`.
+
+### Privacidade (LGPD e GDPR)
+
+- Política de privacidade e Termos de uso em PT/EN/ES: `/privacidade` e `/termos` (texto em `src/legal/content.ts`, dados da empresa nas variáveis `NEXT_PUBLIC_COMPANY_*`). Revisar com advogado antes de vender.
+- O cliente baixa e apaga os próprios dados no app (Início → Meus dados). O dono apaga o cadastro de um cliente na ficha dele.
+- Ao apagar, atendimentos e pagamentos passados ficam sem nome (contabilidade); ficha, plano, fotos e projetos somem. Migração `0015_privacy.sql`.
+- Cadastro da barbearia exige aceitar os termos (a barbearia é controladora dos dados dos clientes, o Navalha é operador).
+- Só cookies essenciais (login), sem rastreamento: não precisa de banner de cookies.
+
+### App instalável
+
+- Cada barbearia tem o próprio app instalável, com o nome dela (`/b/[slug]/manifest.webmanifest`); o painel é o app "Navalha".
+- Cartão "Instale o app" no app do cliente (Android abre o pedido de instalação; iPhone mostra os toques do Safari).
+- Service worker só com a tela "sem internet" (não guarda dados pessoais no celular).
+- Para a Google Play (TWA): `/.well-known/assetlinks.json` usa `ANDROID_PACKAGE` e `ANDROID_SHA256`.
 
 ### Comissões
 
@@ -69,4 +91,4 @@ Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Plano
 2. Pagamento online (Pix e cartão) com reativação automática do plano e Pix dividido com o barbeiro. O código de reativação e o webhook do Asaas já estão em `src/modules/client-app/payments.ts`; falta a rota do webhook e a conta no provedor.
 3. Recursos ligados/desligados respeitados também no app do cliente.
 4. IA de verdade para o corte ideal (hoje a análise é simulada).
-5. App instalável, com "compartilhar foto do Instagram" direto para o Navalha.
+5. Publicar nas lojas (Google Play via TWA; App Store precisa de app nativo com recursos próprios) e "compartilhar foto do Instagram" direto para o Navalha.
