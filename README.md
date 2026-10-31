@@ -59,9 +59,16 @@ Também dá para configurar: aluguel de cadeira, exceções por serviço, produt
 - "Um horário por vez" (Recursos): o cliente não marca dois horários ao mesmo tempo nem guarda vários em aberto.
 - Regras em `src/core/plan-rules.ts` e no banco em `0014_plan_rules.sql` (a função `book_appointment` confere tudo).
 
+### Galeria de cortes e barbas
+
+- O cliente vê modelos de corte e de barba no app (Início e Agendar), abre um, toca em "Quero este visual" e já agenda com o serviço ligado ao modelo.
+- Toda barbearia nasce com 20 modelos (12 cortes e 8 barbas) desenhados por nós, em `public/galeria` (gerados por `scripts/galeria-art.mjs`, sem foto de terceiros).
+- No painel (Galeria, mesmo acesso de Serviços) o dono troca qualquer desenho por uma foto, cria, remove, reordena e traz de volta os iniciais.
+- Banco em `0015_style_gallery.sql` (tabela `style_looks`); a foto fica no banco e é servida em `/b/[slug]/galeria/[id]` com cache.
+
 ## Telas
 
-Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Planos, Financeiro, Comissões, Equipe, Serviços, Mensagens, Shopping, Recursos e Acessos (só o dono). Também a TV da recepção (`/tv/[slug]`, com QR code) e o app do cliente (`/b/[slug]`: início, agendar, shopping, meu plano, corte ideal e projeto de visual).
+Painel (`/painel/[slug]`): Painel, Agenda (com fila de encaixe), Clientes, Planos, Financeiro, Comissões, Equipe, Serviços, Galeria, Mensagens, Shopping, Recursos e Acessos (só o dono). Também a TV da recepção (`/tv/[slug]`, com QR code) e o app do cliente (`/b/[slug]`: início, agendar, shopping, meu plano, galeria de cortes e barbas, corte ideal e projeto de visual).
 
 ## Próximos passos
 

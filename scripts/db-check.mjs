@@ -394,6 +394,25 @@ await check('plano só com alguns barbeiros, dias e horário', async () => {
 
 }
 
+// ---------- galeria de cortes e barbas (0015) ----------
+await check('toda barbearia nasce com a galeria inicial, que qualquer um vê', () => as({}, async () => {
+  const r = await db.query(`select kind, count(*)::int n from style_looks where shop_id = '${SHOP}' group by kind order by kind`);
+  if (JSON.stringify(r.rows) !== '[{"kind":"beard","n":8},{"kind":"cut","n":12}]') throw new Error(JSON.stringify(r.rows));
+}));
+await check('só a equipe com acesso a Serviços muda a galeria', async () => {
+  await as({ sub: '00000000-0000-0000-0000-000000000098', phone: '5500000000000' }, async () => {
+    const u = await db.query(`update style_looks set sort = 99 where shop_id = '${SHOP}' returning id`);
+    if (u.rows.length) throw new Error('estranho alterou');
+    await expectError(`insert into style_looks (shop_id, kind, name) values ('${SHOP}', 'cut', '{"pt":"X"}')`);
+  });
+  await as({ sub: owner }, async () => {
+    await db.query(`insert into style_looks (shop_id, kind, name, photo) values ('${SHOP}', 'beard', '{"pt":"Minha barba"}', 'data:image/jpeg;base64,AAAA')`);
+    await db.query(`delete from style_looks where shop_id = '${SHOP}' and art = 'corte-buzz'`);
+  });
+  await expectError(`insert into style_looks (shop_id, kind, name, photo) values ('${SHOP}', 'cut', '{"pt":"X"}', 'http://foto.com/x.jpg')`);
+  await expectError(`insert into style_looks (shop_id, kind, name) values ('${SHOP}', 'tattoo', '{"pt":"X"}')`);
+});
+
 await check('arquivo de reparo recria funções sem mexer nos dados (e roda duas vezes)', async () => {
   const before = (await db.query('select count(*)::int n from shops')).rows[0].n;
   await db.exec('drop function create_shop(text, text, text, text, text)');

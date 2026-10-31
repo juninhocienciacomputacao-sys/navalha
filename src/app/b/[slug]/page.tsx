@@ -7,6 +7,7 @@ import { asLang } from "@/i18n";
 import { loadClientHome, resolveViewer } from "@/modules/client-app/data";
 import { clientCatalog } from "@/modules/client-app/catalog";
 import { bookingLimitSetting, rebookSetting } from "@/modules/settings/data";
+import { listLooks } from "@/modules/gallery/data";
 import ClientApp, { type Tab } from "./ClientApp";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ lang?: string; tab?: string; as?: string }>;
+  searchParams: Promise<{ lang?: string; tab?: string; as?: string; gal?: string }>;
 }) {
   const { slug } = await params;
   const q = await searchParams;
@@ -38,10 +39,12 @@ export default async function Page({ params, searchParams }: {
     mods.planos ? rebookSetting(bundle.shop.id) : Promise.resolve({ on: false, days: 7 }),
     bookingLimitSetting(bundle.shop.id),
   ]);
-  const [initial, home, catalog] = await Promise.all([
+  const [initial, home, catalog, looks] = await Promise.all([
     daySlots(r, bundle, today, bundle.services[0].id),
     loadClientHome(r, bundle, viewer, now, rebook, limit),
     mods.shopping ? clientCatalog(bundle) : Promise.resolve(null),
+    // galeria com problema (ex.: banco ainda sem a tabela) não pode derrubar o app
+    mods.galeria ? listLooks(bundle.shop.id).catch(() => []) : Promise.resolve([]),
   ]);
   // abas de módulos desligados não aparecem (nem pelo link direto)
   const tabs = TABS.filter((t) => (t === "shop" ? mods.shopping : t === "plan" ? mods.planos : true));
@@ -50,6 +53,7 @@ export default async function Page({ params, searchParams }: {
     <ClientApp
       key={viewer.kind === "demo" ? viewer.clientId : viewer.kind}
       bundle={bundle} lang={lang} today={today} initial={initial} viewer={viewer} home={home} catalog={catalog} initialTab={tab} limit={limit}
+      looks={looks} openGallery={q.gal === "1"}
       hour={Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: bundle.shop.timezone }).format(now))}
     />
   );

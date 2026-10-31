@@ -634,6 +634,65 @@ begin
   return v_id;
 end $$;
 
+create or replace function insert_default_style_looks(p_shop uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if to_regclass('public.style_looks') is null then return; end if;
+  insert into style_looks (shop_id, kind, art, sort, name, description)
+  select p_shop, d.kind, d.art, d.sort, d.name, d.description
+  from (values
+    ('cut', 'corte-low-fade', 0, '{"pt":"Degradê baixo","en":"Low fade","es":"Degradado bajo"}'::jsonb,
+     '{"pt":"Laterais esfumadas só perto da orelha. Discreto e fácil de manter.","en":"Sides fade out just above the ear. Subtle and easy to keep.","es":"Laterales difuminados solo cerca de la oreja. Discreto y fácil de mantener."}'::jsonb),
+    ('cut', 'corte-mid-fade', 1, '{"pt":"Degradê médio","en":"Mid fade","es":"Degradado medio"}'::jsonb,
+     '{"pt":"O degradê sobe até o meio da lateral. O mais pedido.","en":"The fade goes up to the middle of the sides. The most requested.","es":"El degradado sube hasta la mitad del lateral. El más pedido."}'::jsonb),
+    ('cut', 'corte-skin-fade', 2, '{"pt":"Navalhado com risca","en":"Skin fade with hard part","es":"Degradado a navaja con raya"}'::jsonb,
+     '{"pt":"Laterais zeradas na navalha e risca desenhada. Visual marcante.","en":"Sides taken down to the skin with a razor-drawn part. A bold look.","es":"Laterales a piel con navaja y raya marcada. Look llamativo."}'::jsonb),
+    ('cut', 'corte-crew', 3, '{"pt":"Social","en":"Crew cut","es":"Corte clásico"}'::jsonb,
+     '{"pt":"Curto e alinhado, do trabalho ao fim de semana.","en":"Short and neat, from the office to the weekend.","es":"Corto y prolijo, de la oficina al fin de semana."}'::jsonb),
+    ('cut', 'corte-side-part', 4, '{"pt":"Social com risca","en":"Side part","es":"Raya al costado"}'::jsonb,
+     '{"pt":"Risca lateral marcada e topo penteado. Clássico e elegante.","en":"Sharp side part with a combed top. Classic and elegant.","es":"Raya lateral marcada y parte superior peinada. Clásico y elegante."}'::jsonb),
+    ('cut', 'corte-textured-crop', 5, '{"pt":"Crop texturizado","en":"Textured crop","es":"Crop texturizado"}'::jsonb,
+     '{"pt":"Franja curta com textura e laterais baixas. Moderno e prático.","en":"Short textured fringe with low sides. Modern and low effort.","es":"Flequillo corto con textura y laterales bajos. Moderno y práctico."}'::jsonb),
+    ('cut', 'corte-pompadour', 6, '{"pt":"Topete","en":"Pompadour","es":"Tupé"}'::jsonb,
+     '{"pt":"Volume no alto da cabeça penteado para trás. Pede pomada.","en":"Volume on top combed back. Needs a little pomade.","es":"Volumen arriba peinado hacia atrás. Pide pomada."}'::jsonb),
+    ('cut', 'corte-undercut', 7, '{"pt":"Undercut","en":"Undercut","es":"Undercut"}'::jsonb,
+     '{"pt":"Topo comprido e laterais raspadas, com contraste forte.","en":"Long top with shaved sides for strong contrast.","es":"Parte superior larga y laterales rapados, con mucho contraste."}'::jsonb),
+    ('cut', 'corte-buzz', 8, '{"pt":"Máquina (buzz cut)","en":"Buzz cut","es":"Rapado (buzz cut)"}'::jsonb,
+     '{"pt":"Máquina por igual. Zero trabalho de manhã.","en":"Same clipper length all over. Zero effort in the morning.","es":"Máquina pareja. Cero trabajo por la mañana."}'::jsonb),
+    ('cut', 'corte-curly-top', 9, '{"pt":"Cacheado com degradê","en":"Curly top fade","es":"Rizos con degradado"}'::jsonb,
+     '{"pt":"Cachos definidos no topo e laterais baixas.","en":"Defined curls on top with low sides.","es":"Rizos definidos arriba y laterales bajos."}'::jsonb),
+    ('cut', 'corte-afro', 10, '{"pt":"Black power","en":"Afro","es":"Afro"}'::jsonb,
+     '{"pt":"Volume natural e arredondado, com contorno alinhado.","en":"Natural rounded volume with a clean outline.","es":"Volumen natural y redondeado, con contorno prolijo."}'::jsonb),
+    ('cut', 'corte-mullet', 11, '{"pt":"Mullet moderno","en":"Modern mullet","es":"Mullet moderno"}'::jsonb,
+     '{"pt":"Curto na frente e nas laterais, comprido atrás.","en":"Short at the front and sides, long at the back.","es":"Corto adelante y a los lados, largo atrás."}'::jsonb),
+    ('beard', 'barba-stubble', 12, '{"pt":"Barba por fazer","en":"Stubble","es":"Barba de pocos días"}'::jsonb,
+     '{"pt":"Barba bem curtinha e uniforme, com contorno limpo.","en":"Very short, even beard with a clean outline.","es":"Barba muy corta y pareja, con contorno limpio."}'::jsonb),
+    ('beard', 'barba-short', 13, '{"pt":"Barba curta desenhada","en":"Short boxed beard","es":"Barba corta perfilada"}'::jsonb,
+     '{"pt":"Curta, com linhas da bochecha e do pescoço bem marcadas.","en":"Short, with sharp cheek and neck lines.","es":"Corta, con líneas de mejilla y cuello bien marcadas."}'::jsonb),
+    ('beard', 'barba-full', 14, '{"pt":"Barba cheia","en":"Full beard","es":"Barba completa"}'::jsonb,
+     '{"pt":"Barba média e volumosa, aparada por igual.","en":"Medium, full beard trimmed evenly.","es":"Barba media y tupida, recortada pareja."}'::jsonb),
+    ('beard', 'barba-fade-beard', 15, '{"pt":"Barba com degradê","en":"Faded beard","es":"Barba con degradado"}'::jsonb,
+     '{"pt":"A barba vai sumindo até o cabelo, sem corte seco.","en":"The beard blends smoothly into the haircut.","es":"La barba se difumina hasta el pelo, sin corte seco."}'::jsonb),
+    ('beard', 'barba-long', 16, '{"pt":"Barba lenhador","en":"Long beard","es":"Barba leñador"}'::jsonb,
+     '{"pt":"Longa e volumosa. Pede óleo e escova toda semana.","en":"Long and full. Needs oil and brushing every week.","es":"Larga y tupida. Pide aceite y cepillo cada semana."}'::jsonb),
+    ('beard', 'barba-goatee', 17, '{"pt":"Cavanhaque","en":"Goatee","es":"Perilla"}'::jsonb,
+     '{"pt":"Bigode e queixo ligados, bochechas lisas.","en":"Moustache joined to the chin, clean cheeks.","es":"Bigote unido al mentón, mejillas lisas."}'::jsonb),
+    ('beard', 'barba-van-dyke', 18, '{"pt":"Van Dyke","en":"Van Dyke","es":"Van Dyke"}'::jsonb,
+     '{"pt":"Bigode separado do queixo em ponta.","en":"Moustache separate from a pointed chin beard.","es":"Bigote separado de la barba en punta del mentón."}'::jsonb),
+    ('beard', 'barba-mustache', 19, '{"pt":"Bigode","en":"Moustache","es":"Bigote"}'::jsonb,
+     '{"pt":"Bigode marcante com o resto do rosto liso.","en":"A bold moustache with the rest of the face clean.","es":"Bigote marcado con el resto de la cara lisa."}'::jsonb)
+
+  ) as d(kind, art, sort, name, description)
+  where not exists (select 1 from style_looks l where l.shop_id = p_shop and l.art = d.art);
+end $$;
+
+create or replace function shops_default_looks()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform insert_default_style_looks(new.id);
+  return new;
+end $$;
+
 drop policy if exists owner_write on shops;
 create policy owner_write on shops for update using (can_section(id, 'recursos'));
 
@@ -642,6 +701,18 @@ create policy public_client_flags on shop_features for select using (key in ('re
 
 drop policy if exists public_client_flags on shop_features;
 create policy public_client_flags on shop_features for select using (key in ('rebook', 'booking_limit'));
+
+drop policy if exists public_read on style_looks;
+create policy public_read on style_looks for select using (true);
+
+drop policy if exists staff_insert on style_looks;
+create policy staff_insert on style_looks for insert with check (can_section(shop_id, 'servicos'));
+
+drop policy if exists staff_update on style_looks;
+create policy staff_update on style_looks for update using (can_section(shop_id, 'servicos')) with check (can_section(shop_id, 'servicos'));
+
+drop policy if exists staff_delete on style_looks;
+create policy staff_delete on style_looks for delete using (can_section(shop_id, 'servicos'));
 
 revoke all on function book_appointment(uuid, uuid, uuid, timestamptz, text, text) from public;
 
@@ -713,6 +784,8 @@ revoke all on function book_appointment(uuid, uuid, uuid, timestamptz, text, tex
 
 grant execute on function book_appointment(uuid, uuid, uuid, timestamptz, text, text) to authenticated;
 
+revoke all on function insert_default_style_looks(uuid) from public;
+
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
@@ -743,6 +816,10 @@ create trigger shops_guard_access before update on shops
 drop trigger if exists shop_members_fill_phone on shop_members;
 create trigger shop_members_fill_phone before insert on shop_members
   for each row execute function shop_members_fill_phone();
+
+drop trigger if exists shops_default_looks on shops;
+create trigger shops_default_looks after insert on shops
+  for each row execute function shops_default_looks();
 
 -- barbearias já cadastradas
 do $$

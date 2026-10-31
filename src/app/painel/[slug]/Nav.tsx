@@ -14,11 +14,13 @@ export default function Nav({ slug, shopName, demo, allowed, showAccess, roleLab
   showAccess: boolean;
   /** Nome do nível, quando não é o dono (aparece embaixo do nome da barbearia). */
   roleLabel?: string;
-  /** Módulos ligados (a TV da recepção some quando desligada). */
+  /** Módulos ligados (a TV da recepção e a Galeria somem quando desligadas). */
   modules: Modules;
 }) {
+  // A Galeria fica logo depois de Serviços e segue o mesmo acesso (quem cuida dos serviços cuida dos modelos).
   const items = [
-    ...MENU.filter((m) => allowed.includes(m.key)),
+    ...MENU.filter((m) => allowed.includes(m.key)).flatMap((m) =>
+      m.key === "servicos" && modules.galeria ? [m, { key: "galeria", href: "/galeria", label: "Galeria", icon: "🖼️" }] : [m]),
     ...(showAccess ? [{ key: "acessos", href: "/acessos", label: "Acessos", icon: "🔐" }] : []),
   ];
   const path = usePathname();
