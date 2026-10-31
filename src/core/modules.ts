@@ -2,7 +2,7 @@
 // Módulo desligado some do menu do painel, da TV e do app do cliente. Os dados ficam guardados: religou, volta tudo.
 // Fica salvo em shops.modules (jsonb { chave: true/false }); chave ausente = ligado (barbearias antigas continuam iguais).
 
-export type ModuleKey = "mensagens" | "planos" | "financeiro" | "comissoes" | "shopping" | "tv" | "estilo";
+export type ModuleKey = "mensagens" | "planos" | "financeiro" | "comissoes" | "shopping" | "tv" | "estilo" | "galeria";
 
 export type Modules = Record<ModuleKey, boolean>;
 
@@ -40,6 +40,9 @@ export const MODULES: ModuleDef[] = [
   { key: "estilo", icon: "📸", title: "Corte ideal e projeto de visual",
     description: "O cliente manda uma foto, recebe sugestões de corte e um projeto com etapas.",
     where: "Início do app do cliente" },
+  { key: "galeria", icon: "🖼️", title: "Galeria de cortes e barbas",
+    description: "Fotos dos modelos de corte e de barba para o cliente escolher antes de agendar. Já vem com 20 modelos, e você troca as imagens quando quiser.",
+    where: "Painel → Galeria, Início e Agendar no app do cliente" },
 ];
 
 export const MODULE_KEYS = MODULES.map((m) => m.key) as [ModuleKey, ...ModuleKey[]];
@@ -50,12 +53,12 @@ export const PACKAGES: { key: PackageKey; title: string; description: string; mo
   {
     key: "agendamento", title: "Só agendamento",
     description: "Agenda, app do cliente e lembretes no WhatsApp. Simples e direto.",
-    modules: { mensagens: true, planos: false, financeiro: false, comissoes: false, shopping: false, tv: false, estilo: false },
+    modules: { mensagens: true, planos: false, financeiro: false, comissoes: false, shopping: false, tv: false, estilo: false, galeria: true },
   },
   {
     key: "completo", title: "Completo",
     description: "Tudo: planos, financeiro, comissões, TV, shopping e corte ideal.",
-    modules: { mensagens: true, planos: true, financeiro: true, comissoes: true, shopping: true, tv: true, estilo: true },
+    modules: { mensagens: true, planos: true, financeiro: true, comissoes: true, shopping: true, tv: true, estilo: true, galeria: true },
   },
 ];
 
@@ -78,6 +81,7 @@ export const SECTION_MODULE: Record<string, ModuleKey> = {
   financeiro: "financeiro",
   comissoes: "comissoes",
   shopping: "shopping",
+  galeria: "galeria",
 };
 
 /** A tela do painel está disponível com estes módulos? Telas da base sempre estão. */

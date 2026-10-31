@@ -30,4 +30,6 @@ if (shops.length !== 1 || JSON.stringify(shops[0].modules) !== '{}') throw new E
 await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${owner}', false);`);
 await db.query(`select create_shop('Nova', 'barbearia-nova')`);
 await db.exec('reset role');
+const looks = (await db.query(`select s.slug, count(l.id)::int n from shops s left join style_looks l on l.shop_id = s.id group by s.slug order by s.slug`)).rows;
+if (looks.some((x) => x.n !== 20)) throw new Error('galeria inicial faltando: ' + JSON.stringify(looks));
 console.log('atualização ok', (await db.query(`select count(*)::int n from shops`)).rows[0].n, 'barbearias');

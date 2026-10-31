@@ -16,23 +16,30 @@ import Booking, { type BookPreset } from "./Booking";
 import PlanTab, { PayScreen } from "./PlanTab";
 import StyleFlow, { ProjectScreen } from "./StyleFlow";
 import ShopTab from "./ShopTab";
+import GalleryScreen, { GalleryStrip } from "./Gallery";
+import type { Look } from "@/modules/gallery/types";
+import type { LookKind } from "@/modules/gallery/defaults";
 import { Avatar, Bar, BigButton, Icon, Label, LoginCard, PlanCard, Row, dayLabel, initials, shortDate, when } from "./ui";
 
 export type Tab = "home" | "book" | "shop" | "plan";
-type Screen = null | { k: "pay" } | { k: "style" } | { k: "project"; id: string };
+type Screen = null | { k: "pay" } | { k: "style" } | { k: "project"; id: string } | { k: "gallery"; kind: LookKind; id?: string };
 
 export interface AppProps {
   bundle: ShopBundle; lang: Lang; today: string; initial: DaySlots; viewer: Viewer;
   home: ClientHome | null; catalog: ClientCatalog | null; initialTab: Tab; hour: number;
   /** Limite de horários em aberto por cliente (Recursos → "Um horário por vez"). */
   limit: BookingLimit;
+  /** Galeria de cortes e barbas (vazia se o módulo estiver desligado). */
+  looks: Look[];
+  /** Abrir direto na galeria (link "Ver no app do cliente" do painel). */
+  openGallery?: boolean;
 }
 
 export default function ClientApp(p: AppProps) {
   const { bundle, lang, viewer, home } = p;
   const L = t(lang);
   const [tab, setTab] = useState<Tab>(p.initialTab);
-  const [screen, setScreen] = useState<Screen>(null);
+  const [screen, setScreen] = useState<Screen>(p.openGallery && p.looks.length ? { k: "gallery", kind: "cut" } : null);
   const [preset, setPreset] = useState<BookPreset | null>(null);
   const [bookKey, setBookKey] = useState(0);
   const [toast, setToast] = useState("");
@@ -61,8 +68,14 @@ export default function ClientApp(p: AppProps) {
   const tabs = ([["home", "home", L.tab_home], ["book", "calendar", L.tab_book], ["shop", "bag", L.tab_shop], ["plan", "card", L.tab_plan]] as const)
     .filter(([k]) => (k === "shop" ? mods.shopping : k === "plan" ? mods.planos : true));
 
+  const gallery = mods.galeria && p.looks.length > 0;
+  const openGallery = (kind: LookKind = "cut", id?: string) => open({ k: "gallery", kind, id });
+
   let body: React.ReactNode;
-  if (screen?.k === "pay" && home?.plan && mods.planos) body = <PayScreen {...common} plan={home.plan} onBack={() => setScreen(null)} onBook={() => book(null)} onHome={() => go("home")} />;
+  if (screen?.k === "gallery" && gallery) {
+    body = <GalleryScreen key={`${screen.kind}-${screen.id ?? ""}`} bundle={bundle} lang={lang} L={L} looks={p.looks} initialKind={screen.kind} initialId={screen.id}
+      onBack={() => setScreen(null)} onBook={(pr) => book(pr)} />;
+  } else if (screen?.k === "pay" && home?.plan && mods.planos) body = <PayScreen {...common} plan={home.plan} onBack={() => setScreen(null)} onBook={() => book(null)} onHome={() => go("home")} />;
   else if (screen?.k === "style" && mods.estilo) {
     body = <StyleFlow {...common} home={home} loginHref={loginHref} onBack={() => setScreen(null)}
       onCreated={(id) => { setToast(L.project_created); open({ k: "project", id }); }} />;
@@ -74,13 +87,13 @@ export default function ClientApp(p: AppProps) {
   } else if (tab === "book") {
     body = <Booking key={bookKey} bundle={bundle} lang={lang} today={p.today} initial={p.initial} demoAs={demoAs} loggedIn={loggedIn}
       defaultName={home?.me.name} plan={home?.plan ?? null} preset={preset} onHome={() => go("home")}
-      limit={p.limit} upcoming={home?.upcoming ?? []} />;
+      limit={p.limit} upcoming={home?.upcoming ?? []} onGallery={gallery ? () => openGallery() : undefined} />;
   } else if (tab === "plan" && mods.planos) {
     body = <PlanTab {...common} home={home} loginHref={loginHref} onPay={() => open({ k: "pay" })} onBook={() => book(null)} />;
   } else if (tab === "shop" && mods.shopping) {
     body = <ShopTab bundle={bundle} lang={lang} L={L} catalog={p.catalog} />;
   } else {
-    body = <Home {...p} L={L} demoAs={demoAs} loginHref={loginHref} onBook={book} onOpen={open} onToast={setToast} />;
+    body = <Home {...p} L={L} demoAs={demoAs} loginHref={loginHref} onBook={book} onOpen={open} onToast={setToast} onGallery={gallery ? openGallery : undefined} />;
   }
 
   return (
@@ -144,7 +157,7 @@ export default function ClientApp(p: AppProps) {
 
 function Home(p: AppProps & {
   L: Dict; demoAs?: string; loginHref: string; onBook: (pr: BookPreset | null) => void;
-  onOpen: (s: Screen) => void; onToast: (m: string) => void;
+  onOpen: (s: Screen) => void; onToast: (m: string) => void; onGallery?: (kind: LookKind, id?: string) => void;
 }) {
   const { bundle, lang, L, home, today } = p;
   const [cancelId, setCancelId] = useState<string | null>(null);
@@ -162,6 +175,7 @@ function Home(p: AppProps & {
         <div><p className="text-sm text-neutral-500">{greet}</p><h1 className="text-3xl font-bold tracking-tight">{L.hiGuest}</h1></div>
         {p.viewer.kind === "guest" ? <LoginCard L={L} href={p.loginHref} /> : <p className="rounded-2xl bg-amber-50 p-4 text-sm dark:bg-amber-950/30">{L.new_client}</p>}
         <BigButton onClick={() => p.onBook(null)}>{L.book_now}</BigButton>
+        {p.onGallery && <GalleryStrip bundle={bundle} lang={lang} L={L} looks={p.looks} onOpen={p.onGallery} />}
       </div>
     );
   }
@@ -257,6 +271,8 @@ function Home(p: AppProps & {
       </div>
 
       <BigButton className="mt-4" onClick={() => p.onBook(null)}>{L.book_now}</BigButton>
+
+      {p.onGallery && <GalleryStrip bundle={bundle} lang={lang} L={L} looks={p.looks} onOpen={p.onGallery} />}
 
       {bundle.shop.modules.estilo && <div className="mt-4 space-y-2">
         {home.projects.map((prj) => {

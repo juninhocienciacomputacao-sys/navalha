@@ -18,7 +18,11 @@ import { Avatar, BigButton, Icon, Label, dayLabel } from "./ui";
 type Pick = { minutes: number; barberId: string } | null;
 type Step = "service" | "when" | "confirm";
 type Next = { day: string; minutes: number; barberId: string } | null | "none";
-export type BookPreset = { serviceId?: string; barberId?: string; day?: string };
+export type BookPreset = {
+  serviceId?: string; barberId?: string; day?: string;
+  /** Modelo escolhido na galeria (aparece no topo para o cliente mostrar ao barbeiro). */
+  look?: { name: string; img: string | null };
+};
 
 const STEPS: Step[] = ["service", "when", "confirm"];
 
@@ -38,14 +42,16 @@ function icsHref(o: { title: string; place: string; day: string; start: number; 
 }
 
 /** Agendar em 3 etapas: serviço → profissional, dia e horário → confirmar. */
-export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn, defaultName, plan, preset, onHome, limit, upcoming }: {
+export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn, defaultName, plan, preset, onHome, limit, upcoming, onGallery }: {
   bundle: ShopBundle; lang: Lang; today: string; initial: DaySlots; demoAs?: string; loggedIn: boolean;
   defaultName?: string; plan: MyPlan | null; preset?: BookPreset | null; onHome: () => void;
   limit: BookingLimit; upcoming: MyAppointment[];
+  /** Abre a galeria de cortes e barbas (some se o módulo estiver desligado). */
+  onGallery?: () => void;
 }) {
   const { shop, barbers, services } = bundle;
   const L = t(lang);
-  const [step, setStep] = useState<Step>(preset ? "when" : "service");
+  const [step, setStep] = useState<Step>(preset?.serviceId || preset?.barberId || preset?.day ? "when" : "service");
   const [serviceId, setServiceId] = useState(preset?.serviceId && services.some((s) => s.id === preset.serviceId) ? preset.serviceId : services[0].id);
   const [barberId, setBarberId] = useState<string | undefined>(preset?.barberId);
   const [day, setDay] = useState(preset?.day ?? today);
@@ -206,6 +212,18 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
         {STEPS.map((s, i) => <span key={s} className={`h-1 flex-1 rounded-full transition-all duration-500 ${i <= idx ? "bg-amber-500" : "bg-neutral-200 dark:bg-neutral-800"}`} />)}
       </div>
 
+      {preset?.look && (
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50/80 p-2 pr-3 dark:border-amber-800 dark:bg-amber-950/30">
+          {/* eslint-disable-next-line @next/next/no-img-element -- modelo escolhido na galeria */}
+          {preset.look.img && <img src={preset.look.img} alt="" className="h-16 w-[3.2rem] shrink-0 rounded-xl object-cover" />}
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">{L.gal_chosen}</p>
+            <p className="truncate font-semibold">{preset.look.name}</p>
+            <p className="text-xs text-neutral-600 dark:text-neutral-400">{L.gal_show}</p>
+          </div>
+        </div>
+      )}
+
       {full && openAppts[0] && (
         <div className="mt-4 rounded-3xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-4 dark:border-amber-800 dark:from-amber-950/40 dark:to-neutral-950">
           <p className="flex items-center gap-2 font-semibold"><Icon name="lock" className="size-4 text-amber-600" />{L.limit_t}</p>
@@ -229,6 +247,11 @@ export default function Booking({ bundle, lang, today, initial, demoAs, loggedIn
                 <p className="mt-1.5 text-xs text-neutral-600 dark:text-neutral-400">{fill(L.plan_next_use, { d: dl(nextUseDay(planObj, plan.useDays, today)) })}</p>
               )}
             </div>
+          )}
+          {onGallery && !preset?.look && (
+            <button onClick={onGallery} className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-dashed border-amber-400 bg-amber-50/60 px-4 py-3 text-left text-sm font-semibold text-amber-800 transition hover:bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20 dark:text-amber-300">
+              <Icon name="image" className="size-5 shrink-0" /><span className="min-w-0 flex-1">{L.gal_see}</span><Icon name="chevron" className="size-4 shrink-0" />
+            </button>
           )}
           <div className="mt-5 space-y-2.5">
             {services.map((s) => {
